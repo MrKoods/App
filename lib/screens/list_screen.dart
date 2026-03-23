@@ -1,0 +1,550 @@
+﻿import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../models/preset_model.dart';
+import '../models/task_model.dart';
+import '../services/firestore_service.dart';
+import '../widgets/task_tile.dart';
+
+class ListScreen extends StatefulWidget {
+  final List<Task> tasks;
+
+  const ListScreen({
+    super.key,
+    required this.tasks,
+  });
+
+  @override
+  State<ListScreen> createState() => _ListScreenState();
+}
+
+class _ListScreenState extends State<ListScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  static const Color _backgroundColor = Color(0xFF090B10);
+  static const Color _surfaceColor = Color(0xFF121826);
+  static const Color _accentColor = Color(0xFF55E6C1);
+  static const Color _secondaryAccent = Color(0xFFFFC857);
+
+  static const List<String> _dayOptions = [
+    'Any', 'Monday', 'Tuesday', 'Wednesday',
+    'Thursday', 'Friday', 'Saturday', 'Sunday',
+  ];
+
+  String get _todayName {
+    const List<String> days = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+      'Friday', 'Saturday', 'Sunday',
+    ];
+    return days[DateTime.now().weekday - 1];
+  }
+
+  @override
+  void didUpdateWidget(covariant ListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTimer(widget.tasks);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _syncTimer(List<Task> tasks) {
+    final bool hasRunningTask =
+        tasks.any((task) => task.isInProgress && task.startTime != null);
+
+    if (hasRunningTask && _timer == null) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() { _now = DateTime.now(); });
+      });
+    }
+
+    if (!hasRunningTask && _timer != null) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  Future<void> _handleStartTask(Task task) async {
+    final bool started = await _firestoreService.startTask(task: task);
+    if (!mounted) return;
+
+    if (!started) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Finish your current task first.')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${task.taskName} started')),
+    );
+  }
+
+  Future<void> _handleFinishTask(Task task) async {
+    final int durationSeconds = await _firestoreService.finishTask(task: task);
+    if (!mounted) return;
+
+    final int minutes = (durationSeconds / 60).ceil();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${task.taskName} completed in $minutes min. +1 coin')),
+    );
+  }
+
+  Future<void> _handleCheckboxChanged(Task task, List<Task> tasks) async {
+    if (task.completed) return;
+
+    if (task.isInProgress) {
+      await _handleFinishTask(task);
+      return;
+    }
+
+    final bool anotherTaskRunning =
+        tasks.any((t) => t.id != task.id && t.isInProgress);
+
+    if (anotherTaskRunning) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Finish your current task first.')),
+      );
+      return;
+    }
+
+    await _firestoreService.completeTaskDirectly(task: task);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${task.taskName} completed. +1 coin')),
+    );
+  }
+
+  Future<void> _handleResetTask(Task task) async {
+    await _firestoreService.resetTask(task: task);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${task.taskName} reset')),
+    );
+  }
+
+  int _taskPriority(Task task) {
+    if (task.isInProgress) return 0;
+    if (task.isNotStarted) return 1;
+    return 2;
+  }
+
+  Duration _elapsedForTask(Task task) {
+    if (task.startTime == null) return Duration.zero;
+    final Duration duration = _now.difference(task.startTime!);
+    return duration.isNegative ? Duration.zero : duration;
+  }
+
+  bool _isPresetForToday(TaskPreset preset) =>
+      preset.dayAssignment == 'Any' || preset.dayAssignment == _todayName;
+
+  // Save preset dialog
+  void _showSavePresetDialog() {
+    final TextEditingController nameController = TextEditingController();
+    String selectedDay = _todayName;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (_, setDialogState) {
+            return AlertDialog(
+              backgroundColor: _surfaceColor,
+              title: const Text('Save as Preset',
+                  style: TextStyle(color: Colors.white)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Preset name',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white30)),
+                      focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: _accentColor)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Assign to day',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  DropdownButton<String>(
+                    value: selectedDay,
+                    dropdownColor: _surfaceColor,
+                    style: const TextStyle(color: Colors.white),
+                    isExpanded: true,
+                    underline: Container(height: 1, color: Colors.white30),
+                    items: _dayOptions
+                        .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => selectedDay = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text('${widget.tasks.length} task(s) will be saved',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel',
+                      style: TextStyle(color: Colors.white54)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: _accentColor,
+                      foregroundColor: Colors.black),
+                  onPressed: () async {
+                    final String name = nameController.text.trim();
+                    if (name.isEmpty) return;
+                    Navigator.pop(dialogContext);
+                    await _firestoreService.savePreset(
+                      name: name,
+                      dayAssignment: selectedDay,
+                      tasks: widget.tasks,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('"$name" saved as preset')));
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Apply preset bottom sheet
+  void _showApplyPresetSheet(TaskPreset preset) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _surfaceColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Expanded(
+                  child: Text(preset.name,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold)),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _accentColor.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(preset.dayAssignment,
+                      style: const TextStyle(
+                          color: _accentColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              const SizedBox(height: 14),
+              Text(
+                  '${preset.tasks.length} task(s) will be added to your list:',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+              const SizedBox(height: 10),
+              ...preset.tasks.take(8).map((t) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(children: [
+                      const Icon(Icons.circle, size: 6, color: _accentColor),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: Text(t.taskName,
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 14))),
+                      Text(t.category,
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 12)),
+                    ]),
+                  )),
+              if (preset.tasks.length > 8)
+                Text('+ ${preset.tasks.length - 8} more...',
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12)),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _accentColor,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(sheetContext);
+                    await _firestoreService.applyPreset(preset);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            '"${preset.name}" applied — ${preset.tasks.length} task(s) added'),
+                      ));
+                    }
+                  },
+                  child: const Text('Apply Preset',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Delete preset confirm
+  Future<void> _confirmDeletePreset(TaskPreset preset) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surfaceColor,
+        title: const Text('Delete Preset',
+            style: TextStyle(color: Colors.white)),
+        content: Text('Delete "${preset.name}"? This cannot be undone.',
+            style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.white54))),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Delete',
+                  style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _firestoreService.deletePreset(preset.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('"${preset.name}" deleted')));
+      }
+    }
+  }
+
+  // Preset chip bar
+  Widget _buildPresetBar(List<TaskPreset> presets) {
+    final String today = _todayName;
+    final List<TaskPreset> sorted = [...presets]
+      ..sort((a, b) {
+        final bool aT = a.dayAssignment == today || a.dayAssignment == 'Any';
+        final bool bT = b.dayAssignment == today || b.dayAssignment == 'Any';
+        if (aT && !bT) return -1;
+        if (!aT && bT) return 1;
+        return a.name.compareTo(b.name);
+      });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            const Icon(Icons.bookmark_rounded, color: _accentColor, size: 18),
+            const SizedBox(width: 8),
+            const Text('Presets',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold)),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: widget.tasks.isEmpty ? null : _showSavePresetDialog,
+              icon: const Icon(Icons.save_alt, size: 15),
+              label: const Text('Save current list'),
+              style: TextButton.styleFrom(
+                  foregroundColor: _secondaryAccent,
+                  textStyle: const TextStyle(fontSize: 13)),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 6),
+        if (presets.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text(
+              'No presets yet. Add tasks, then tap "Save current list".',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35), fontSize: 13),
+            ),
+          )
+        else
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: sorted.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final TaskPreset p = sorted[i];
+                final bool isToday = _isPresetForToday(p);
+                return GestureDetector(
+                  onLongPress: () => _confirmDeletePreset(p),
+                  child: ActionChip(
+                    backgroundColor: isToday
+                        ? _accentColor.withValues(alpha: 0.15)
+                        : _surfaceColor,
+                    side: BorderSide(
+                        color: isToday
+                            ? _accentColor.withValues(alpha: 0.55)
+                            : Colors.white.withValues(alpha: 0.12)),
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(p.name,
+                            style: TextStyle(
+                                color: isToday ? _accentColor : Colors.white70,
+                                fontWeight: isToday
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                fontSize: 13)),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isToday
+                                ? _accentColor.withValues(alpha: 0.25)
+                                : Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            p.dayAssignment == 'Any'
+                                ? 'Any'
+                                : p.dayAssignment.substring(0, 3),
+                            style: TextStyle(
+                                color: isToday ? _accentColor : Colors.white54,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    onPressed: () => _showApplyPresetSheet(p),
+                  ),
+                );
+              },
+            ),
+          ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _syncTimer(widget.tasks);
+
+    final List<Task> sortedTasks = [...widget.tasks]
+      ..sort((l, r) => _taskPriority(l).compareTo(_taskPriority(r)));
+
+    return Container(
+      color: _backgroundColor,
+      child: StreamBuilder<List<TaskPreset>>(
+        stream: _firestoreService.watchPresets(),
+        builder: (context, snap) {
+          final List<TaskPreset> presets = snap.data ?? const [];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(children: [
+                  const Text('My Checklist',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Text(_todayName,
+                      style: const TextStyle(
+                          color: _accentColor,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
+                ]),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Text(
+                  'Start one task, finish it, then move to the next.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ),
+              const SizedBox(height: 14),
+              _buildPresetBar(presets),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Divider(color: Colors.white12, height: 1),
+              ),
+              Expanded(
+                child: sortedTasks.isEmpty
+                    ? const Center(
+                        child: Text('No tasks yet. Tap + to add one.',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 18)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                        itemCount: sortedTasks.length,
+                        itemBuilder: (context, index) {
+                          final Task task = sortedTasks[index];
+                          return TaskTile(
+                            task: task,
+                            onReset: task.completed
+                                ? () => _handleResetTask(task)
+                                : null,
+                            onCheckboxChanged: (_) =>
+                                _handleCheckboxChanged(task, widget.tasks),
+                            elapsedDuration: task.isInProgress
+                                ? _elapsedForTask(task)
+                                : null,
+                            onStart: task.isNotStarted
+                                ? () => _handleStartTask(task)
+                                : null,
+                            onFinish: task.isInProgress
+                                ? () => _handleFinishTask(task)
+                                : null,
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}

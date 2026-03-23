@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "284104385937",
+    "project_id": "microwins-4cde5",
+    "storage_bucket": "microwins-4cde5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:284104385937:android:b4bfec0be7595178692630",
+        "android_client_info": {
+          "package_name": "com.example.microwins"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6F7nCR7xZfQHYQpZYc80OIAv3VYtXQ6k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

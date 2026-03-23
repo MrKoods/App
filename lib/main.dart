@@ -1,0 +1,244 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+
+import 'models/history_entry.dart';
+import 'models/task.dart';
+import 'screens/auth_gate.dart';
+import 'screens/home_screen.dart';
+import 'screens/list_screen.dart';
+import 'screens/history_screen.dart';
+import 'screens/rewards_screen.dart';
+import 'screens/add_task_screen.dart';
+import 'services/auth_service.dart';
+import 'services/firestore_service.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  runApp(const MicroWinsApp());
+}
+
+class MicroWinsApp extends StatelessWidget {
+  const MicroWinsApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const Color backgroundColor = Color(0xFF090B10);
+    const Color surfaceColor = Color(0xFF121826);
+    const Color accentColor = Color(0xFF55E6C1);
+    const Color secondaryAccent = Color(0xFFFFC857);
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'MicroWins',
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: backgroundColor,
+        colorScheme: const ColorScheme.dark(
+          primary: accentColor,
+          secondary: secondaryAccent,
+          surface: surfaceColor,
+        ),
+        canvasColor: backgroundColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: backgroundColor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        cardColor: surfaceColor,
+        snackBarTheme: const SnackBarThemeData(
+          backgroundColor: surfaceColor,
+          contentTextStyle: TextStyle(color: Colors.white),
+          behavior: SnackBarBehavior.floating,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF101522),
+          selectedItemColor: accentColor,
+          unselectedItemColor: Colors.white70,
+          showUnselectedLabels: true,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: accentColor,
+            foregroundColor: backgroundColor,
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: secondaryAccent,
+          foregroundColor: Colors.black,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: surfaceColor,
+          labelStyle: const TextStyle(color: Colors.white70),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Colors.white24),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: accentColor, width: 1.4),
+          ),
+        ),
+      ),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class MainNavigation extends StatefulWidget {
+  const MainNavigation({super.key});
+
+  @override
+  State<MainNavigation> createState() => _MainNavigationState();
+}
+
+class _MainNavigationState extends State<MainNavigation> {
+  final FirestoreService _firestoreService = FirestoreService();
+  int _selectedIndex = 0;
+
+  Future<void> _redeemReward(int cost, String rewardName, int coins) async {
+    if (coins >= cost) {
+      await _firestoreService.updateCoins(coins - cost);
+      await _firestoreService.addHistory('Redeemed $rewardName (-$cost coins)');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$rewardName redeemed!'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not enough coins'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  void _openAddTaskScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AddTaskScreen(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestoreService.getUserStream(),
+      builder: (context, userSnapshot) {
+        if (!userSnapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final Map<String, dynamic>? userData = userSnapshot.data!.data();
+        final int coins = userData?['coins'] ?? 0;
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _firestoreService.getTasksStream(),
+          builder: (context, taskSnapshot) {
+            if (!taskSnapshot.hasData) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final List<Task> tasks = taskSnapshot.data!.docs.map((doc) {
+              return Task.fromFirestore(doc.id, doc.data());
+            }).toList();
+
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _firestoreService.getHistoryStream(),
+              builder: (context, historySnapshot) {
+                if (!historySnapshot.hasData) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final List<HistoryEntry> history = historySnapshot.data!.docs
+                    .map<HistoryEntry>((doc) => HistoryEntry.fromFirestore(doc.id, doc.data()))
+                    .toList();
+
+                final List<Widget> pages = [
+                  HomeScreen(tasks: tasks, coins: coins),
+                  ListScreen(tasks: tasks),
+                  HistoryScreen(history: history),
+                  RewardsScreen(
+                    coins: coins,
+                    onRedeemReward: (cost, rewardName) async {
+                      await _redeemReward(cost, rewardName, coins);
+                    },
+                  ),
+                ];
+
+                return Scaffold(
+                  appBar: AppBar(
+                    title: const Text('MicroWins'),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.logout),
+                        onPressed: () async {
+                          await AuthService().logout();
+                        },
+                      ),
+                    ],
+                  ),
+                  body: pages[_selectedIndex],
+                  floatingActionButton: FloatingActionButton(
+                    onPressed: _openAddTaskScreen,
+                    child: const Icon(Icons.add),
+                  ),
+                  bottomNavigationBar: BottomNavigationBar(
+                    currentIndex: _selectedIndex,
+                    onTap: _onItemTapped,
+                    type: BottomNavigationBarType.fixed,
+                    items: const [
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.home),
+                        label: 'Home',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.checklist),
+                        label: 'My List',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.history),
+                        label: 'History',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.emoji_events),
+                        label: 'Rewards',
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
