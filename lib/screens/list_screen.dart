@@ -6,6 +6,7 @@ import '../models/preset_model.dart';
 import '../models/task_model.dart';
 import '../services/firestore_service.dart';
 import '../widgets/task_tile.dart';
+import 'share_checklist_screen.dart';
 
 class ListScreen extends StatefulWidget {
   final List<Task> tasks;
@@ -145,6 +146,43 @@ class _ListScreenState extends State<ListScreen> {
   bool _isPresetForToday(TaskPreset preset) =>
       preset.dayAssignment == 'Any' || preset.dayAssignment == _todayName;
 
+  Future<void> _handleDeleteTask(Task task) async {
+    // Show a quick confirmation so accidental taps don't delete immediately
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surfaceColor,
+        title: const Text('Delete Task',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Delete "${task.taskName}"? This cannot be undone.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await _firestoreService.deleteTask(task.id);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('"${task.taskName}" deleted')),
+    );
+  }
+
   // Save preset dialog
   void _showSavePresetDialog() {
     final TextEditingController nameController = TextEditingController();
@@ -211,7 +249,7 @@ class _ListScreenState extends State<ListScreen> {
                     final String name = nameController.text.trim();
                     if (name.isEmpty) return;
                     Navigator.pop(dialogContext);
-                    await _firestoreService.savePreset(
+                    await _firestoreService.savePresetFromTasks(
                       name: name,
                       dayAssignment: selectedDay,
                       tasks: widget.tasks,
@@ -291,6 +329,31 @@ class _ListScreenState extends State<ListScreen> {
                     style: const TextStyle(
                         color: Colors.white54, fontSize: 12)),
               const SizedBox(height: 20),
+              // Share button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.share_rounded, size: 18),
+                  label: const Text('Share with a Friend'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFFFC857),
+                    side: const BorderSide(color: Color(0xFFFFC857), width: 1.2),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ShareChecklistScreen(preset: preset),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -303,13 +366,7 @@ class _ListScreenState extends State<ListScreen> {
                   ),
                   onPressed: () async {
                     Navigator.pop(sheetContext);
-                    await _firestoreService.applyPreset(preset);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(
-                            '"${preset.name}" applied — ${preset.tasks.length} task(s) added'),
-                      ));
-                    }
+                    await _showApplyPresetChoiceDialog(preset);
                   },
                   child: const Text('Apply Preset',
                       style: TextStyle(
@@ -320,6 +377,74 @@ class _ListScreenState extends State<ListScreen> {
           ),
         );
       },
+    );
+  }
+
+  // Ask user whether preset should add to current list or replace it.
+  Future<void> _showApplyPresetChoiceDialog(TaskPreset preset) async {
+    final String? choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surfaceColor,
+        title: Text(
+          'Apply "${preset.name}"',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'How would you like to apply this preset?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext, 'add'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _accentColor,
+              side: const BorderSide(color: _accentColor),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Add to List'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, 'replace'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _secondaryAccent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text(
+              'Replace List',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
+
+    await _firestoreService.applyPreset(
+      preset,
+      wipeFirst: choice == 'replace',
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          choice == 'replace'
+              ? '"${preset.name}" replaced your list.'
+              : '"${preset.name}" applied — ${preset.tasks.length} task(s) added',
+        ),
+      ),
     );
   }
 
@@ -537,6 +662,7 @@ class _ListScreenState extends State<ListScreen> {
                             onFinish: task.isInProgress
                                 ? () => _handleFinishTask(task)
                                 : null,
+                            onDelete: () => _handleDeleteTask(task),
                           );
                         },
                       ),

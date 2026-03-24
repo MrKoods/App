@@ -10,7 +10,10 @@ import 'screens/list_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/rewards_screen.dart';
 import 'screens/add_task_screen.dart';
+import 'screens/friends_screen.dart';
+import 'screens/shared_checklists_screen.dart';
 import 'services/auth_service.dart';
+import 'services/activity_service.dart';
 import 'services/firestore_service.dart';
 
 Future<void> main() async {
@@ -100,12 +103,18 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   final FirestoreService _firestoreService = FirestoreService();
+  final ActivityService _activityService = ActivityService();
   int _selectedIndex = 0;
 
   Future<void> _redeemReward(int cost, String rewardName, int coins) async {
     if (coins >= cost) {
       await _firestoreService.updateCoins(coins - cost);
       await _firestoreService.addHistory('Redeemed $rewardName (-$cost coins)');
+      // Post to activity feed
+      await _activityService.postActivity(
+        type: 'reward_redeemed',
+        message: 'Redeemed reward: $rewardName',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -191,6 +200,8 @@ class _MainNavigationState extends State<MainNavigation> {
                       await _redeemReward(cost, rewardName, coins);
                     },
                   ),
+                  const FriendsScreen(),
+                  const SharedListScreen(),
                 ];
 
                 return Scaffold(
@@ -206,10 +217,12 @@ class _MainNavigationState extends State<MainNavigation> {
                     ],
                   ),
                   body: pages[_selectedIndex],
-                  floatingActionButton: FloatingActionButton(
-                    onPressed: _openAddTaskScreen,
-                    child: const Icon(Icons.add),
-                  ),
+                  floatingActionButton: _selectedIndex < 2
+                      ? FloatingActionButton(
+                          onPressed: _openAddTaskScreen,
+                          child: const Icon(Icons.add),
+                        )
+                      : null,
                   bottomNavigationBar: BottomNavigationBar(
                     currentIndex: _selectedIndex,
                     onTap: _onItemTapped,
@@ -230,6 +243,14 @@ class _MainNavigationState extends State<MainNavigation> {
                       BottomNavigationBarItem(
                         icon: Icon(Icons.emoji_events),
                         label: 'Rewards',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.people_rounded),
+                        label: 'Friends',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.move_to_inbox_rounded),
+                        label: 'Shared',
                       ),
                     ],
                   ),

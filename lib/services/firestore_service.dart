@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/history_model.dart';
 import '../models/preset_model.dart';
 import '../models/task_model.dart';
+import 'activity_service.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -168,6 +169,12 @@ class FirestoreService {
       '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
     );
 
+    // Post task completion to activity feed
+    await ActivityService().postActivity(
+      type: 'task_completed',
+      message: '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
+    );
+
     await _updateDailyProgress(referenceDate: latestTask.date ?? endTime);
 
     return safeDurationSeconds;
@@ -290,14 +297,28 @@ class FirestoreService {
 
     await addHistory('Daily checklist completed +1 coin');
 
+    // Post daily checklist completion to activity feed
+    await ActivityService().postActivity(
+      type: 'checklist_completed',
+      message: 'Completed daily checklist!',
+    );
+
     if (currentStreak == 3) {
       bonusCoins += 1;
       await addHistory('3-day streak reward +1 coin');
+      await ActivityService().postActivity(
+        type: 'streak_milestone',
+        message: 'Reached a 3-day streak! 🔥',
+      );
     }
 
     if (currentStreak == 7) {
       bonusCoins += 2;
       await addHistory('7-day streak reward +2 coins');
+      await ActivityService().postActivity(
+        type: 'streak_milestone',
+        message: 'Reached a 7-day streak! 🔥🔥',
+      );
     }
 
     currentCoins += bonusCoins;
@@ -395,7 +416,82 @@ class FirestoreService {
     });
   }
 
+  /// Save multiple tasks for a specific date.
+  /// Used when user adds multiple tasks at once with a selected date.
+  Future<void> addMultipleTasks({
+    required List<dynamic> taskInputs, // List of TaskInput objects from add_task_screen.dart
+    required DateTime selectedDate,
+  }) async {
+    final WriteBatch batch = _firestore.batch();
+
+    for (final dynamic input in taskInputs) {
+      // Each taskInput has: controller (TextEditingController), category (String)
+      final String taskName = input.controller.text.trim();
+      final String category = input.category;
+
+      if (taskName.isEmpty) {
+        continue; // Skip empty tasks
+      }
+
+      final DocumentReference<Map<String, dynamic>> ref = tasksCollection.doc();
+      batch.set(ref, {
+        'userId': uid,
+        'taskName': taskName,
+        'category': category,
+        'status': 'notStarted',
+        'startTime': null,
+        'endTime': null,
+        'durationSeconds': 0,
+        'expectedDuration': 0,
+        'date': selectedDate.toIso8601String(),
+        'completed': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+  }
+
+  /// Save multiple tasks as a preset template.
+  /// Used when user wants to save tasks as a reusable preset without adding them to the daily checklist.
   Future<void> savePreset({
+    required String name,
+    required List<dynamic> taskInputs, // List of TaskInput objects from add_task_screen.dart
+    String dayAssignment = 'Any',
+  }) async {
+    // Convert TaskInput objects to task templates
+    final List<Map<String, dynamic>> taskTemplates = [];
+
+    for (final dynamic input in taskInputs) {
+      final String taskName = input.controller.text.trim();
+      final String category = input.category;
+
+      if (taskName.isEmpty) {
+        continue; // Skip empty tasks
+      }
+
+      taskTemplates.add({
+        'taskName': taskName,
+        'category': category,
+      });
+    }
+
+    if (taskTemplates.isEmpty) {
+      throw Exception('Cannot save preset with no tasks');
+    }
+
+    await presetsCollection.add({
+      'userId': uid,
+      'name': name,
+      'dayAssignment': dayAssignment,
+      'tasks': taskTemplates,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Original savePreset method for backward compatibility.
+  /// Kept for existing code that uses Task objects.
+  Future<void> savePresetFromTasks({
     required String name,
     required String dayAssignment,
     required List<Task> tasks,
@@ -413,12 +509,25 @@ class FirestoreService {
     });
   }
 
+  Future<void> deleteTask(String taskId) async {
+    await tasksCollection.doc(taskId).delete();
+  }
+
   Future<void> deletePreset(String presetId) async {
     await presetsCollection.doc(presetId).delete();
   }
 
-  Future<void> applyPreset(TaskPreset preset) async {
+  Future<void> applyPreset(TaskPreset preset, {bool wipeFirst = false}) async {
     final WriteBatch batch = _firestore.batch();
+
+    if (wipeFirst) {
+      final QuerySnapshot<Map<String, dynamic>> existingTasks =
+          await tasksCollection.where('userId', isEqualTo: uid).get();
+      for (final doc in existingTasks.docs) {
+        batch.delete(doc.reference);
+      }
+    }
+
     for (final TaskTemplate template in preset.tasks) {
       final DocumentReference<Map<String, dynamic>> ref = tasksCollection.doc();
       batch.set(ref, {

@@ -8,6 +8,7 @@ class TaskTile extends StatelessWidget {
   final VoidCallback? onStart;
   final VoidCallback? onFinish;
   final VoidCallback? onReset;
+  final VoidCallback? onDelete;
   final ValueChanged<bool?>? onCheckboxChanged;
   final Duration? elapsedDuration;
 
@@ -18,6 +19,7 @@ class TaskTile extends StatelessWidget {
     this.onStart,
     this.onFinish,
     this.onReset,
+    this.onDelete,
     this.onCheckboxChanged,
     this.elapsedDuration,
   });
@@ -218,6 +220,19 @@ class TaskTile extends StatelessWidget {
                                     ),
                                   ),
                                 ),
+                                // Small delete button — only shown when onDelete is provided
+                                if (onDelete != null)
+                                  IconButton(
+                                    onPressed: onDelete,
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.white30,
+                                      size: 20,
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    tooltip: 'Delete task',
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 8),

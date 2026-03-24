@@ -3,9 +3,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only read/write their own user document
+    // Users: own doc write-only; any signed-in user can read (needed for search)
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
     // Tasks: only the owning user can read/write their tasks
@@ -20,6 +21,65 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
       allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Presets: only the owning user can read/write their presets
+    match /presets/{presetId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Friend requests: sender or receiver can read; only sender can create;
+    // only receiver can update status (accept/decline)
+    match /friend_requests/{requestId} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == resource.data.senderId ||
+         request.auth.uid == resource.data.receiverId);
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.senderId;
+      allow update: if request.auth != null &&
+        request.auth.uid == resource.data.receiverId;
+    }
+
+    // Friends: a user can read their own friendship docs; created by the system
+    // through accept (which runs as the accepting user)
+    match /friends/{friendshipId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Activity feed: a user can write their own posts; friends can read
+    // (client-side filtering enforced — open read for signed-in users is simplest
+    //  for a student project; tighten later with friend checks if needed)
+    match /activity_feed/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth != null &&
+        request.auth.uid == resource.data.userId;
+    }
+
+    // Reactions: any signed-in user can read reactions; only owner can write/delete
+    match /reactions/{reactionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.userId;
+      allow delete: if request.auth != null &&
+        request.auth.uid == resource.data.userId;
+    }
+
+    // Shared checklists: sender or receiver can read; only sender can create;
+    // only receiver can update status
+    match /shared_checklists/{shareId} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == resource.data.senderId ||
+         request.auth.uid == resource.data.receiverId);
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.senderId;
+      allow update: if request.auth != null &&
+        request.auth.uid == resource.data.receiverId;
     }
   }
 }

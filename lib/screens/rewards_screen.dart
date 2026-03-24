@@ -21,7 +21,7 @@ class RewardsScreen extends StatelessWidget {
       color: _backgroundColor,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        child: ListView(
           children: [
             Container(
               width: double.infinity,
@@ -115,6 +115,7 @@ class RewardsScreen extends StatelessWidget {
               subtitle: 'Redeem at 100 coins',
               icon: Icons.attach_money,
               cost: 100,
+              compact: true,
             ),
           ],
         ),
@@ -128,6 +129,7 @@ class RewardsScreen extends StatelessWidget {
     required String subtitle,
     required IconData icon,
     required int cost,
+    bool compact = false,
   }) {
     bool canRedeem = coins >= cost;
 
@@ -141,18 +143,27 @@ class RewardsScreen extends StatelessWidget {
       ),
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: EdgeInsets.all(compact ? 6 : 8),
         child: Column(
           children: [
             ListTile(
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: compact ? 10 : 16,
+                vertical: compact ? 2 : 0,
+              ),
+              minVerticalPadding: compact ? 0 : null,
               leading: Container(
-                width: 42,
-                height: 42,
+                width: compact ? 36 : 42,
+                height: compact ? 36 : 42,
                 decoration: BoxDecoration(
                   color: (canRedeem ? _mintColor : _accentColor).withValues(alpha: 0.14),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: canRedeem ? _mintColor : _accentColor),
+                child: Icon(
+                  icon,
+                  size: compact ? 20 : 24,
+                  color: canRedeem ? _mintColor : _accentColor,
+                ),
               ),
               title: Text(
                 title,
@@ -170,7 +181,7 @@ class RewardsScreen extends StatelessWidget {
                 style: TextStyle(
                   color: canRedeem ? _mintColor : Colors.white54,
                   fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                  fontSize: compact ? 14 : 16,
                 ),
               ),
             ),
@@ -185,6 +196,7 @@ class RewardsScreen extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: canRedeem ? _accentColor : Colors.grey.shade700,
                   foregroundColor: Colors.black,
+                  padding: EdgeInsets.symmetric(vertical: compact ? 10 : 14),
                 ),
                 child: Text(canRedeem ? 'Redeem' : 'Locked'),
               ),
