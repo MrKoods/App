@@ -1,10 +1,13 @@
 ﻿import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
+import '../models/focus_preset_model.dart';
 import '../models/preset_model.dart';
 import '../models/task_model.dart';
 import '../services/firestore_service.dart';
+import '../services/focus_lock_service.dart';
 import '../widgets/task_tile.dart';
 import 'share_checklist_screen.dart';
 
@@ -22,8 +25,11 @@ class ListScreen extends StatefulWidget {
 
 class _ListScreenState extends State<ListScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final FocusLockService _focusLockService = FocusLockService.instance;
+  final AudioPlayer _audioPlayer = AudioPlayer();
   Timer? _timer;
   DateTime _now = DateTime.now();
+  String? _activeAudioTaskId;
 
   static const Color _backgroundColor = Color(0xFF090B10);
   static const Color _surfaceColor = Color(0xFF121826);
@@ -44,25 +50,37 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _audioPlayer.setReleaseMode(ReleaseMode.loop);
+    _syncTimer(widget.tasks);
+    _syncTaskAudioState(widget.tasks);
+  }
+
+  @override
   void didUpdateWidget(covariant ListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncTimer(widget.tasks);
+    _syncTaskAudioState(widget.tasks);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
   void _syncTimer(List<Task> tasks) {
     final bool hasRunningTask =
-        tasks.any((task) => task.isInProgress && task.startTime != null);
+      tasks.any((task) => task.isInProgress && task.startTime != null);
 
     if (hasRunningTask && _timer == null) {
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
-        setState(() { _now = DateTime.now(); });
+        setState(() {
+          _now = DateTime.now();
+        });
       });
     }
 
@@ -72,7 +90,71 @@ class _ListScreenState extends State<ListScreen> {
     }
   }
 
+  void _syncTaskAudioState(List<Task> tasks) {
+    final String? activeTaskId = _activeAudioTaskId;
+    if (activeTaskId == null) {
+      return;
+    }
+
+    final bool taskStillRunning = tasks.any((task) => task.id == activeTaskId && task.isInProgress);
+
+    if (!taskStillRunning) {
+      unawaited(_stopAudioForTask(taskId: activeTaskId));
+    }
+  }
+
+  FocusPreset? _focusPresetForTask(Task task) {
+    final String? modeId = task.focusModeId;
+    if (modeId == null || modeId.isEmpty) {
+      return null;
+    }
+
+    for (final FocusPreset preset in FocusLibrary.presets) {
+      if (preset.id == modeId) {
+        return preset;
+      }
+    }
+
+    return null;
+  }
+
+  String? _focusModeLabel(Task task) {
+    return _focusPresetForTask(task)?.title;
+  }
+
+  FocusSoundOption? _focusSoundForTask(Task task) {
+    final FocusPreset? preset = _focusPresetForTask(task);
+    if (preset == null) {
+      return null;
+    }
+
+    return FocusLibrary.soundByLabel(preset.suggestedSoundLabel);
+  }
+
+  Future<void> _playAudioForTask(Task task) async {
+    final FocusSoundOption? sound = _focusSoundForTask(task);
+
+    if (sound == null) {
+      await _stopAudioForTask();
+      return;
+    }
+
+    await _audioPlayer.stop();
+    await _audioPlayer.play(AssetSource(sound.assetPath));
+    _activeAudioTaskId = task.id;
+  }
+
+  Future<void> _stopAudioForTask({String? taskId}) async {
+    if (taskId != null && _activeAudioTaskId != taskId) {
+      return;
+    }
+
+    await _audioPlayer.stop();
+    _activeAudioTaskId = null;
+  }
+
   Future<void> _handleStartTask(Task task) async {
+    final bool resumingPausedTask = task.isPaused;
     final bool started = await _firestoreService.startTask(task: task);
     if (!mounted) return;
 
@@ -82,13 +164,27 @@ class _ListScreenState extends State<ListScreen> {
       );
       return;
     }
+
+    await _focusLockService.startSession(
+      task: task.copyWith(
+        status: 'inProgress',
+        startTime: DateTime.now(),
+        durationSeconds: task.durationSeconds,
+        completed: false,
+      ),
+    );
+
+    await _playAudioForTask(task);
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${task.taskName} started')),
+      SnackBar(content: Text('${task.taskName} ${resumingPausedTask ? 'resumed' : 'started'}')),
     );
   }
 
   Future<void> _handleFinishTask(Task task) async {
     final int durationSeconds = await _firestoreService.finishTask(task: task);
+    await _stopAudioForTask(taskId: task.id);
     if (!mounted) return;
 
     final int minutes = (durationSeconds / 60).ceil();
@@ -100,13 +196,13 @@ class _ListScreenState extends State<ListScreen> {
   Future<void> _handleCheckboxChanged(Task task, List<Task> tasks) async {
     if (task.completed) return;
 
-    if (task.isInProgress) {
+    if (task.isActive) {
       await _handleFinishTask(task);
       return;
     }
 
     final bool anotherTaskRunning =
-        tasks.any((t) => t.id != task.id && t.isInProgress);
+        tasks.any((t) => t.id != task.id && t.isActive);
 
     if (anotherTaskRunning) {
       if (!mounted) return;
@@ -117,6 +213,7 @@ class _ListScreenState extends State<ListScreen> {
     }
 
     await _firestoreService.completeTaskDirectly(task: task);
+    await _stopAudioForTask(taskId: task.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} completed. +1 coin')),
@@ -125,6 +222,7 @@ class _ListScreenState extends State<ListScreen> {
 
   Future<void> _handleResetTask(Task task) async {
     await _firestoreService.resetTask(task: task);
+    await _stopAudioForTask(taskId: task.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} reset')),
@@ -132,15 +230,23 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   int _taskPriority(Task task) {
-    if (task.isInProgress) return 0;
+    if (task.isActive) return 0;
     if (task.isNotStarted) return 1;
     return 2;
   }
 
   Duration _elapsedForTask(Task task) {
-    if (task.startTime == null) return Duration.zero;
-    final Duration duration = _now.difference(task.startTime!);
-    return duration.isNegative ? Duration.zero : duration;
+    if (task.isPaused) {
+      return Duration(seconds: task.durationSeconds);
+    }
+
+    if (!task.isInProgress || task.startTime == null) {
+      return Duration(seconds: task.durationSeconds);
+    }
+
+    final Duration segment = _now.difference(task.startTime!);
+    final int segmentSeconds = segment.isNegative ? 0 : segment.inSeconds;
+    return Duration(seconds: task.durationSeconds + segmentSeconds);
   }
 
   bool _isPresetForToday(TaskPreset preset) =>
@@ -175,12 +281,181 @@ class _ListScreenState extends State<ListScreen> {
 
     if (confirmed != true) return;
 
+    await _stopAudioForTask(taskId: task.id);
     await _firestoreService.deleteTask(task.id);
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('"${task.taskName}" deleted')),
     );
+  }
+
+  Future<void> _openFocusModePicker(Task task) async {
+    String selectedModeId = task.focusModeId ?? '';
+
+    final String? pickedModeId = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (_, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Focus Mode for "${task.taskName}"',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    RadioGroup<String>(
+                      groupValue: selectedModeId,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setSheetState(() {
+                          selectedModeId = value;
+                        });
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: FocusLibrary.presets.map(
+                          (preset) => RadioListTile<String>(
+                            value: preset.id,
+                            activeColor: _accentColor,
+                            title: Text(
+                              preset.title,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            subtitle: Text(
+                              preset.suggestedSoundLabel,
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                          ),
+                        ).toList(),
+                      ),
+                    ),
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        selectedModeId.isEmpty
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        color: _accentColor,
+                      ),
+                      title: const Text(
+                        'No Focus Mode',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      onTap: () {
+                        setSheetState(() {
+                          selectedModeId = '';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(sheetContext, selectedModeId),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _accentColor,
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text('Save Focus Mode'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (pickedModeId == null) {
+      return;
+    }
+
+    final String? nextFocusModeId = pickedModeId.isEmpty ? null : pickedModeId;
+    await _firestoreService.updateTaskFocusMode(
+      taskId: task.id,
+      focusModeId: nextFocusModeId,
+    );
+
+    final String message = nextFocusModeId == null
+        ? 'Focus mode cleared for ${task.taskName}'
+        : 'Focus set to ${_focusModeLabel(task.copyWith(focusModeId: nextFocusModeId))}';
+
+    if (task.isInProgress) {
+      await _playAudioForTask(task.copyWith(focusModeId: nextFocusModeId));
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _confirmAndClearList() async {
+    if (widget.tasks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your list is already empty.')),
+      );
+      return;
+    }
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _surfaceColor,
+        title: const Text(
+          'Clear List',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'Are you sure you want to delete all tasks from this list?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Clear', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _stopAudioForTask();
+      final int deletedCount = await _firestoreService.clearAllTasksForCurrentUser();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cleared $deletedCount task(s).')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to clear list. Please try again.')),
+      );
+    }
   }
 
   // Save preset dialog
@@ -532,7 +807,7 @@ class _ListScreenState extends State<ListScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: sorted.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (_, i) {
                 final TaskPreset p = sorted[i];
                 final bool isToday = _isPresetForToday(p);
@@ -592,6 +867,7 @@ class _ListScreenState extends State<ListScreen> {
   @override
   Widget build(BuildContext context) {
     _syncTimer(widget.tasks);
+    _syncTaskAudioState(widget.tasks);
 
     final List<Task> sortedTasks = [...widget.tasks]
       ..sort((l, r) => _taskPriority(l).compareTo(_taskPriority(r)));
@@ -615,6 +891,16 @@ class _ListScreenState extends State<ListScreen> {
                           fontSize: 28,
                           fontWeight: FontWeight.bold)),
                   const Spacer(),
+                  TextButton.icon(
+                    onPressed: _confirmAndClearList,
+                    icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+                    label: const Text('Clear List'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Text(_todayName,
                       style: const TextStyle(
                           color: _accentColor,
@@ -653,15 +939,19 @@ class _ListScreenState extends State<ListScreen> {
                                 : null,
                             onCheckboxChanged: (_) =>
                                 _handleCheckboxChanged(task, widget.tasks),
-                            elapsedDuration: task.isInProgress
+                            elapsedDuration: task.isActive
                                 ? _elapsedForTask(task)
                                 : null,
-                            onStart: task.isNotStarted
+                            onStart: (task.isNotStarted || task.isPaused)
                                 ? () => _handleStartTask(task)
                                 : null,
-                            onFinish: task.isInProgress
+                            onFinish: task.isActive
                                 ? () => _handleFinishTask(task)
                                 : null,
+                            onFocus: task.completed
+                                ? null
+                                : () => _openFocusModePicker(task),
+                            focusModeLabel: _focusModeLabel(task),
                             onDelete: () => _handleDeleteTask(task),
                           );
                         },

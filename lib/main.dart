@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -15,10 +17,13 @@ import 'screens/shared_checklists_screen.dart';
 import 'services/auth_service.dart';
 import 'services/activity_service.dart';
 import 'services/firestore_service.dart';
+import 'services/focus_lock_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await AuthService().initializeAuthPersistence();
+  await FocusLockService.instance.initialize();
 
   runApp(const MicroWinsApp());
 }

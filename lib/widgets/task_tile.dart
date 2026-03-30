@@ -7,10 +7,12 @@ class TaskTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onStart;
   final VoidCallback? onFinish;
+  final VoidCallback? onFocus;
   final VoidCallback? onReset;
   final VoidCallback? onDelete;
   final ValueChanged<bool?>? onCheckboxChanged;
   final Duration? elapsedDuration;
+  final String? focusModeLabel;
 
   const TaskTile({
     super.key,
@@ -18,10 +20,12 @@ class TaskTile extends StatelessWidget {
     this.onTap,
     this.onStart,
     this.onFinish,
+    this.onFocus,
     this.onReset,
     this.onDelete,
     this.onCheckboxChanged,
     this.elapsedDuration,
+    this.focusModeLabel,
   });
 
   Color _getCategoryColor(String category) {
@@ -39,7 +43,7 @@ class TaskTile extends StatelessWidget {
   }
 
   Color _getStatusColor() {
-    if (task.isInProgress) {
+    if (task.isInProgress || task.isPaused) {
       return const Color(0xFF55E6C1);
     }
 
@@ -58,6 +62,10 @@ class TaskTile extends StatelessWidget {
   String _formatStatus(String status) {
     if (status == 'inProgress') {
       return 'In progress';
+    }
+
+    if (status == 'paused') {
+      return 'Active';
     }
 
     if (status == 'completed') {
@@ -136,6 +144,37 @@ class TaskTile extends StatelessWidget {
       );
     }
 
+    if (task.isPaused) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            'Active: ${_formatElapsed(elapsedDuration ?? Duration.zero)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: onStart,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC857),
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Resume'),
+          ),
+          TextButton(
+            onPressed: onFinish,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF55E6C1),
+            ),
+            child: const Text('Finish'),
+          ),
+        ],
+      );
+    }
+
     if (task.isDone) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -159,13 +198,28 @@ class TaskTile extends StatelessWidget {
       );
     }
 
-    return ElevatedButton(
-      onPressed: onStart,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFFFFC857),
-        foregroundColor: Colors.black,
-      ),
-      child: const Text('Start'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ElevatedButton(
+          onPressed: onStart,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFFC857),
+            foregroundColor: Colors.black,
+          ),
+          child: const Text('Start'),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: onFocus,
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF55E6C1),
+          ),
+          child: Text(
+            focusModeLabel == null ? 'Focus Mode' : 'Focus: $focusModeLabel',
+          ),
+        ),
+      ],
     );
   }
 

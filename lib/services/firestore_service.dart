@@ -78,12 +78,12 @@ class FirestoreService {
     final int tasksCompletedToday = todaysTasks.where((task) => task.completed).length;
     final int totalFocusTimeSeconds = todaysTasks.fold<int>(
       0,
-      (sum, task) => sum + task.durationSeconds,
+      (acc, task) => acc + task.durationSeconds,
     );
 
     final int coinsEarnedToday = historyItems
         .where((entry) => _isSameDay(entry.timestamp, now))
-        .fold<int>(0, (sum, entry) => sum + _coinsFromHistory(entry.message));
+        .fold<int>(0, (acc, entry) => acc + _coinsFromHistory(entry.message));
 
     return <String, int>{
       'tasksCompletedToday': tasksCompletedToday,
@@ -108,6 +108,7 @@ class FirestoreService {
       'expectedDuration': 0,
       'date': DateTime.now().toIso8601String(),
       'completed': false,
+      'focusModeId': null,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -115,7 +116,7 @@ class FirestoreService {
   Future<bool> startTask({required Task task}) async {
     final QuerySnapshot<Map<String, dynamic>> activeTaskSnapshot = await tasksCollection
         .where('userId', isEqualTo: uid)
-        .where('status', isEqualTo: 'inProgress')
+      .where('status', whereIn: <String>['inProgress', 'paused'])
         .get();
 
     final bool hasAnotherTaskRunning = activeTaskSnapshot.docs.any((doc) => doc.id != task.id);
@@ -125,17 +126,47 @@ class FirestoreService {
     }
 
     final DateTime now = DateTime.now();
+    final int carriedDurationSeconds = task.isPaused ? task.durationSeconds : 0;
 
     await tasksCollection.doc(task.id).update({
       'status': 'inProgress',
       'startTime': now,
       'endTime': null,
-      'durationSeconds': 0,
+      'durationSeconds': carriedDurationSeconds,
       'completed': false,
       'date': now.toIso8601String(),
     });
 
     return true;
+  }
+
+  Future<int> pauseTask({required Task task}) async {
+    final DocumentSnapshot<Map<String, dynamic>> taskSnapshot =
+        await tasksCollection.doc(task.id).get();
+
+    if (!taskSnapshot.exists) {
+      return task.durationSeconds;
+    }
+
+    final Task latestTask = Task.fromFirestore(taskSnapshot.id, taskSnapshot.data()!);
+    final DateTime now = DateTime.now();
+    final DateTime segmentStart = latestTask.startTime ?? now;
+    final int segmentSeconds = now.difference(segmentStart).inSeconds;
+    final int totalDurationSeconds =
+        (latestTask.durationSeconds + (segmentSeconds < 0 ? 0 : segmentSeconds));
+
+    await tasksCollection.doc(task.id).update({
+      'status': 'paused',
+      'startTime': null,
+      'endTime': null,
+      'durationSeconds': totalDurationSeconds,
+      'completed': false,
+      'date': now.toIso8601String(),
+    });
+
+    await addHistory('${latestTask.taskName} paused');
+
+    return totalDurationSeconds;
   }
 
   Future<int> finishTask({required Task task}) async {
@@ -148,13 +179,14 @@ class FirestoreService {
 
     final Task latestTask = Task.fromFirestore(taskSnapshot.id, taskSnapshot.data()!);
     final DateTime endTime = DateTime.now();
-    final DateTime startTime = latestTask.startTime ?? endTime;
-    final int durationSeconds = endTime.difference(startTime).inSeconds;
-    final int safeDurationSeconds = durationSeconds < 0 ? 0 : durationSeconds;
+    final DateTime segmentStart = latestTask.startTime ?? endTime;
+    final int segmentSeconds = endTime.difference(segmentStart).inSeconds;
+    final int safeSegmentSeconds = segmentSeconds < 0 ? 0 : segmentSeconds;
+    final int safeDurationSeconds = latestTask.durationSeconds + safeSegmentSeconds;
 
     await tasksCollection.doc(task.id).update({
       'status': 'completed',
-      'startTime': startTime,
+      'startTime': latestTask.startTime ?? endTime,
       'endTime': endTime,
       'durationSeconds': safeDurationSeconds,
       'completed': true,
@@ -202,6 +234,25 @@ class FirestoreService {
     return 0;
   }
 
+  Future<void> markTaskCompletedFromFocus({
+    required Task task,
+    required int focusedSeconds,
+  }) async {
+    final DateTime now = DateTime.now();
+
+    await tasksCollection.doc(task.id).update({
+      'status': 'completed',
+      'startTime': task.startTime ?? now,
+      'endTime': now,
+      'durationSeconds': focusedSeconds < 0 ? 0 : focusedSeconds,
+      'completed': true,
+      'date': now.toIso8601String(),
+    });
+
+    await addHistory('${task.taskName} completed with a focus session');
+    await _updateDailyProgress(referenceDate: now);
+  }
+
   Future<void> resetTask({required Task task}) async {
     final DateTime now = DateTime.now();
 
@@ -215,6 +266,17 @@ class FirestoreService {
     });
 
     await addHistory('${task.taskName} reset');
+  }
+
+  Future<void> updateTaskFocusMode({
+    required String taskId,
+    String? focusModeId,
+  }) async {
+    await tasksCollection.doc(taskId).update({
+      'focusModeId': (focusModeId == null || focusModeId.trim().isEmpty)
+          ? null
+          : focusModeId.trim(),
+    });
   }
 
   Future<void> updateCoins(int newCoins) async {
@@ -445,6 +507,7 @@ class FirestoreService {
         'expectedDuration': 0,
         'date': selectedDate.toIso8601String(),
         'completed': false,
+        'focusModeId': null,
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
@@ -473,6 +536,7 @@ class FirestoreService {
       taskTemplates.add({
         'taskName': taskName,
         'category': category,
+        'focusModeId': null,
       });
     }
 
@@ -497,7 +561,13 @@ class FirestoreService {
     required List<Task> tasks,
   }) async {
     final List<Map<String, dynamic>> taskTemplates = tasks
-        .map((t) => {'taskName': t.taskName, 'category': t.category})
+        .map(
+          (t) => {
+            'taskName': t.taskName,
+            'category': t.category,
+            'focusModeId': t.focusModeId,
+          },
+        )
         .toList();
 
     await presetsCollection.add({
@@ -511,6 +581,35 @@ class FirestoreService {
 
   Future<void> deleteTask(String taskId) async {
     await tasksCollection.doc(taskId).delete();
+  }
+
+  Future<int> clearAllTasksForCurrentUser() async {
+    final QuerySnapshot<Map<String, dynamic>> taskSnapshot =
+        await tasksCollection.where('userId', isEqualTo: uid).get();
+
+    if (taskSnapshot.docs.isEmpty) {
+      return 0;
+    }
+
+    int deletedCount = 0;
+    const int batchSize = 400;
+
+    for (int start = 0; start < taskSnapshot.docs.length; start += batchSize) {
+      final int end =
+          (start + batchSize) > taskSnapshot.docs.length ? taskSnapshot.docs.length : (start + batchSize);
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> chunk =
+          taskSnapshot.docs.sublist(start, end);
+
+      final WriteBatch batch = _firestore.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      deletedCount += chunk.length;
+    }
+
+    return deletedCount;
   }
 
   Future<void> deletePreset(String presetId) async {
@@ -541,6 +640,7 @@ class FirestoreService {
         'expectedDuration': 0,
         'date': DateTime.now().toIso8601String(),
         'completed': false,
+        'focusModeId': template.focusModeId,
         'createdAt': FieldValue.serverTimestamp(),
       });
     }

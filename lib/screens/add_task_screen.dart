@@ -515,7 +515,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                         ],
                       ),
                     );
-                  }).toList(),
+                    }),
 
                   // Add task button
                   const SizedBox(height: 8),

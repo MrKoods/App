@@ -3,18 +3,27 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class TaskTemplate {
   final String taskName;
   final String category;
+  final String? focusModeId;
 
-  const TaskTemplate({required this.taskName, required this.category});
+  const TaskTemplate({
+    required this.taskName,
+    required this.category,
+    this.focusModeId,
+  });
 
   Map<String, dynamic> toMap() => {
         'taskName': taskName,
         'category': category,
+        'focusModeId': focusModeId,
       };
 
   factory TaskTemplate.fromMap(Map<String, dynamic> data) {
+    final String rawFocusModeId = (data['focusModeId'] ?? '').toString().trim();
+
     return TaskTemplate(
       taskName: (data['taskName'] ?? '').toString(),
       category: (data['category'] ?? 'Personal').toString(),
+      focusModeId: rawFocusModeId.isEmpty ? null : rawFocusModeId,
     );
   }
 }

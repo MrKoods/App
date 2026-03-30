@@ -12,6 +12,7 @@ class Task {
   final int expectedDuration;
   final DateTime? date;
   final bool completed;
+  final String? focusModeId;
 
   Task({
     required this.id,
@@ -28,6 +29,7 @@ class Task {
     this.date,
     bool? completed,
     bool? isCompleted,
+    this.focusModeId,
   })  : userId = userId ?? '',
         taskName = taskName ?? title ?? '',
         category = category ?? 'Personal',
@@ -42,6 +44,8 @@ class Task {
   bool get isCompleted => completed;
   bool get isNotStarted => status == 'notStarted';
   bool get isInProgress => status == 'inProgress';
+  bool get isPaused => status == 'paused';
+  bool get isActive => isInProgress || isPaused;
   bool get isDone => status == 'completed';
 
   int get duration => durationSeconds;
@@ -58,8 +62,10 @@ class Task {
     int? expectedDuration,
     DateTime? date,
     bool? completed,
+    String? focusModeId,
     bool clearStartTime = false,
     bool clearEndTime = false,
+    bool clearFocusModeId = false,
   }) {
     return Task(
       id: id ?? this.id,
@@ -73,6 +79,7 @@ class Task {
       expectedDuration: expectedDuration ?? this.expectedDuration,
       date: date ?? this.date,
       completed: completed ?? this.completed,
+      focusModeId: clearFocusModeId ? null : focusModeId ?? this.focusModeId,
     );
   }
 
@@ -89,6 +96,7 @@ class Task {
       expectedDuration: _parseInt(data['expectedDuration']),
       date: _parseDateTime(data['date']),
       completed: data['completed'] == true,
+      focusModeId: _parseFocusModeId(data['focusModeId']),
     );
   }
 
@@ -104,6 +112,7 @@ class Task {
       'expectedDuration': expectedDuration,
       'date': date?.toIso8601String(),
       'completed': completed,
+      'focusModeId': focusModeId,
     };
   }
 
@@ -112,6 +121,8 @@ class Task {
       case 'in progress':
       case 'inProgress':
         return 'inProgress';
+      case 'paused':
+        return 'paused';
       case 'completed':
         return 'completed';
       default:
@@ -149,5 +160,18 @@ class Task {
     }
 
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static String? _parseFocusModeId(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    final String parsed = value.toString().trim();
+    if (parsed.isEmpty) {
+      return null;
+    }
+
+    return parsed;
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/history_model.dart';
 import '../models/task_model.dart';
 import '../services/firestore_service.dart';
+import '../services/focus_lock_service.dart';
 import '../widgets/daily_summary_widget.dart';
 import '../widgets/task_tile.dart';
 
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final FocusLockService _focusLockService = FocusLockService.instance;
   final ScrollController _scrollController = ScrollController();
   Timer? _timer;
   DateTime _now = DateTime.now();
@@ -76,6 +78,18 @@ class _HomeScreenState extends State<HomeScreen> {
           content: Text('Finish your current task first.'),
         ),
       );
+      return;
+    }
+
+    await _focusLockService.startSession(
+      task: task.copyWith(
+        status: 'inProgress',
+        startTime: DateTime.now(),
+        completed: false,
+      ),
+    );
+
+    if (!mounted) {
       return;
     }
 
