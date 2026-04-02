@@ -69,8 +69,10 @@ class _FocusLockScreenState extends State<FocusLockScreen> {
   DateTime get _startedAt => widget.task.startTime ?? widget.session.startedAt;
 
   Duration get _elapsed {
-    final Duration duration = _now.difference(_startedAt);
-    return duration.isNegative ? Duration.zero : duration;
+    final Duration carriedDuration = Duration(seconds: widget.task.durationSeconds);
+    final Duration liveDuration = _now.difference(_startedAt);
+    final int liveSeconds = liveDuration.isNegative ? 0 : liveDuration.inSeconds;
+    return carriedDuration + Duration(seconds: liveSeconds);
   }
 
   String _formatElapsed(Duration value) {

@@ -69,7 +69,7 @@ class FocusLibrary {
     ),
     FocusSoundOption(
       label: 'Soft Instrumental Loop',
-      assetPath: 'audio/soft_instrumental.mp3',
+      assetPath: 'audio/Instrumental.mp3',
     ),
   ];
 

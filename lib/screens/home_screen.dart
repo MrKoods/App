@@ -183,12 +183,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Duration _elapsedForTask(Task task) {
+    if (task.isPaused) {
+      return Duration(seconds: task.durationSeconds);
+    }
+
     if (task.startTime == null) {
-      return Duration.zero;
+      return Duration(seconds: task.durationSeconds);
     }
 
     final Duration duration = _now.difference(task.startTime!);
-    return duration.isNegative ? Duration.zero : duration;
+    final int liveSeconds = duration.isNegative ? 0 : duration.inSeconds;
+    return Duration(seconds: task.durationSeconds + liveSeconds);
   }
 
   bool _isSameDay(DateTime? left, DateTime right) {
@@ -507,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             task: task,
                             onReset: task.completed ? () => _handleResetTask(task) : null,
                             onCheckboxChanged: (_) => _handleCheckboxChanged(task, userTasks),
-                            elapsedDuration: task.isInProgress ? _elapsedForTask(task) : null,
+                            elapsedDuration: task.isActive ? _elapsedForTask(task) : null,
                             onStart: task.isNotStarted ? () => _handleStartTask(task) : null,
                             onFinish: task.isInProgress ? () => _handleFinishTask(task) : null,
                           ),

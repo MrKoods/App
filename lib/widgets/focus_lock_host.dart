@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import '../models/focus_session.dart';
+import '../models/focus_preset_model.dart';
 import '../models/task_model.dart';
 import '../screens/focus_lock_screen.dart';
 import '../services/firestore_service.dart';
@@ -28,8 +30,11 @@ class FocusLockHost extends StatefulWidget {
 
 class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserver {
   late final FocusLockService _focusLockService;
+  final AudioPlayer _audioPlayer = AudioPlayer();
   FirestoreService? _firestoreService;
   bool _isReconcilingSession = false;
+  String? _activeAudioTaskId;
+  String? _activeAudioAssetPath;
 
   FirestoreService get _taskService => _firestoreService ??= FirestoreService();
 
@@ -37,11 +42,16 @@ class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserv
   void initState() {
     super.initState();
     _focusLockService = widget.focusLockService ?? FocusLockService.instance;
+    // Keep app volume at normal level; source audio is already gain-boosted.
+    unawaited(_audioPlayer.setVolume(1.0));
+    unawaited(_audioPlayer.setReleaseMode(ReleaseMode.loop));
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    unawaited(_stopFocusAudio());
+    unawaited(_audioPlayer.dispose());
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -63,6 +73,46 @@ class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserv
     return null;
   }
 
+  FocusSoundOption? _soundForTask(Task task) {
+    final String? modeId = task.focusModeId;
+    if (modeId == null || modeId.isEmpty) {
+      return null;
+    }
+
+    for (final FocusPreset preset in FocusLibrary.presets) {
+      if (preset.id == modeId) {
+        return FocusLibrary.soundByLabel(preset.suggestedSoundLabel);
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> _playFocusAudio(Task task) async {
+    final FocusSoundOption? sound = _soundForTask(task);
+    if (sound == null) {
+      await _stopFocusAudio();
+      return;
+    }
+
+    final bool alreadyPlayingSameTrack =
+        _activeAudioTaskId == task.id && _activeAudioAssetPath == sound.assetPath;
+    if (alreadyPlayingSameTrack) {
+      return;
+    }
+
+    await _audioPlayer.stop();
+    await _audioPlayer.play(AssetSource(sound.assetPath));
+    _activeAudioTaskId = task.id;
+    _activeAudioAssetPath = sound.assetPath;
+  }
+
+  Future<void> _stopFocusAudio() async {
+    await _audioPlayer.stop();
+    _activeAudioTaskId = null;
+    _activeAudioAssetPath = null;
+  }
+
   Future<void> _syncActiveTask(FocusSession session, Task? task) async {
     if (_isReconcilingSession) {
       return;
@@ -76,11 +126,13 @@ class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserv
       }
 
       if (!task.isInProgress) {
+        await _stopFocusAudio();
         await _focusLockService.stopSession();
         return;
       }
 
       await _focusLockService.syncWithTask(task);
+      await _playFocusAudio(task);
     } finally {
       _isReconcilingSession = false;
     }
@@ -95,6 +147,7 @@ class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserv
       builder: (context, _) {
         final FocusSession? session = _focusLockService.activeSession;
         if (session == null || !session.isActive) {
+          unawaited(_stopFocusAudio());
           return widget.child;
         }
 
@@ -117,6 +170,7 @@ class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserv
                   });
 
                   if (activeTask == null || !activeTask.isInProgress) {
+                    unawaited(_stopFocusAudio());
                     return const SizedBox.shrink();
                   }
 

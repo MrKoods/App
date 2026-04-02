@@ -1,6 +1,5 @@
 ﻿import 'dart:async';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import '../models/focus_preset_model.dart';
@@ -26,10 +25,8 @@ class ListScreen extends StatefulWidget {
 class _ListScreenState extends State<ListScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final FocusLockService _focusLockService = FocusLockService.instance;
-  final AudioPlayer _audioPlayer = AudioPlayer();
   Timer? _timer;
   DateTime _now = DateTime.now();
-  String? _activeAudioTaskId;
   bool _savingOrder = false;
 
   static const Color _backgroundColor = Color(0xFF090B10);
@@ -53,22 +50,18 @@ class _ListScreenState extends State<ListScreen> {
   @override
   void initState() {
     super.initState();
-    _audioPlayer.setReleaseMode(ReleaseMode.loop);
     _syncTimer(widget.tasks);
-    _syncTaskAudioState(widget.tasks);
   }
 
   @override
   void didUpdateWidget(covariant ListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncTimer(widget.tasks);
-    _syncTaskAudioState(widget.tasks);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -91,19 +84,6 @@ class _ListScreenState extends State<ListScreen> {
     }
   }
 
-  void _syncTaskAudioState(List<Task> tasks) {
-    final String? activeTaskId = _activeAudioTaskId;
-    if (activeTaskId == null) {
-      return;
-    }
-
-    final bool taskStillRunning = tasks.any((task) => task.id == activeTaskId && task.isInProgress);
-
-    if (!taskStillRunning) {
-      unawaited(_stopAudioForTask(taskId: activeTaskId));
-    }
-  }
-
   FocusPreset? _focusPresetForTask(Task task) {
     final String? modeId = task.focusModeId;
     if (modeId == null || modeId.isEmpty) {
@@ -121,37 +101,6 @@ class _ListScreenState extends State<ListScreen> {
 
   String? _focusModeLabel(Task task) {
     return _focusPresetForTask(task)?.title;
-  }
-
-  FocusSoundOption? _focusSoundForTask(Task task) {
-    final FocusPreset? preset = _focusPresetForTask(task);
-    if (preset == null) {
-      return null;
-    }
-
-    return FocusLibrary.soundByLabel(preset.suggestedSoundLabel);
-  }
-
-  Future<void> _playAudioForTask(Task task) async {
-    final FocusSoundOption? sound = _focusSoundForTask(task);
-
-    if (sound == null) {
-      await _stopAudioForTask();
-      return;
-    }
-
-    await _audioPlayer.stop();
-    await _audioPlayer.play(AssetSource(sound.assetPath));
-    _activeAudioTaskId = task.id;
-  }
-
-  Future<void> _stopAudioForTask({String? taskId}) async {
-    if (taskId != null && _activeAudioTaskId != taskId) {
-      return;
-    }
-
-    await _audioPlayer.stop();
-    _activeAudioTaskId = null;
   }
 
   Future<void> _handleStartTask(Task task) async {
@@ -175,8 +124,6 @@ class _ListScreenState extends State<ListScreen> {
       ),
     );
 
-    await _playAudioForTask(task);
-
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} ${resumingPausedTask ? 'resumed' : 'started'}')),
@@ -185,7 +132,6 @@ class _ListScreenState extends State<ListScreen> {
 
   Future<void> _handleFinishTask(Task task) async {
     final int durationSeconds = await _firestoreService.finishTask(task: task);
-    await _stopAudioForTask(taskId: task.id);
     if (!mounted) return;
 
     final int minutes = (durationSeconds / 60).ceil();
@@ -214,7 +160,6 @@ class _ListScreenState extends State<ListScreen> {
     }
 
     await _firestoreService.completeTaskDirectly(task: task);
-    await _stopAudioForTask(taskId: task.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} completed. +1 coin')),
@@ -223,7 +168,6 @@ class _ListScreenState extends State<ListScreen> {
 
   Future<void> _handleResetTask(Task task) async {
     await _firestoreService.resetTask(task: task);
-    await _stopAudioForTask(taskId: task.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} reset')),
@@ -323,7 +267,6 @@ class _ListScreenState extends State<ListScreen> {
 
     if (confirmed != true) return;
 
-    await _stopAudioForTask(taskId: task.id);
     await _firestoreService.deleteTask(task.id);
 
     if (!mounted) return;
@@ -439,10 +382,6 @@ class _ListScreenState extends State<ListScreen> {
         ? 'Focus mode cleared for ${task.taskName}'
         : 'Focus set to ${_focusModeLabel(task.copyWith(focusModeId: nextFocusModeId))}';
 
-    if (task.isInProgress) {
-      await _playAudioForTask(task.copyWith(focusModeId: nextFocusModeId));
-    }
-
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -485,7 +424,6 @@ class _ListScreenState extends State<ListScreen> {
     if (confirmed != true) return;
 
     try {
-      await _stopAudioForTask();
       final int deletedCount = await _firestoreService.clearAllTasksForCurrentUser();
       if (!mounted) return;
 
@@ -1000,7 +938,6 @@ class _ListScreenState extends State<ListScreen> {
   @override
   Widget build(BuildContext context) {
     _syncTimer(widget.tasks);
-    _syncTaskAudioState(widget.tasks);
 
     final List<Task> sortedTasks = _orderedTasks(widget.tasks);
 
