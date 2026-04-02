@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../models/focus_session.dart';
 import '../models/task_model.dart';
+import '../models/task_completion_result.dart';
 import '../services/firestore_service.dart';
 import '../services/focus_lock_service.dart';
+import 'checklist_complete_screen.dart';
 
 class FocusLockScreen extends StatefulWidget {
   final Task task;
@@ -13,7 +15,8 @@ class FocusLockScreen extends StatefulWidget {
   final FocusLockService? focusLockService;
   final Future<void> Function(Task task)? onStopTask;
   final Future<int> Function(Task task)? onPauseTask;
-  final Future<int> Function(Task task)? onCompleteTask;
+  final Future<TaskCompletionResult> Function(Task task)? onCompleteTask;
+  final ValueChanged<int>? onNavigateTab;
 
   const FocusLockScreen({
     super.key,
@@ -23,6 +26,7 @@ class FocusLockScreen extends StatefulWidget {
     this.onStopTask,
     this.onPauseTask,
     this.onCompleteTask,
+    this.onNavigateTab,
   });
 
   @override
@@ -44,6 +48,7 @@ class _FocusLockScreenState extends State<FocusLockScreen> {
   Timer? _ticker;
   DateTime _now = DateTime.now();
   bool _busy = false;
+  bool _isOpeningCompletionScreen = false;
 
   @override
   void initState() {
@@ -178,7 +183,7 @@ class _FocusLockScreenState extends State<FocusLockScreen> {
     });
 
     try {
-      final int durationSeconds = widget.onCompleteTask != null
+        final TaskCompletionResult result = widget.onCompleteTask != null
           ? await widget.onCompleteTask!(widget.task)
           : await _taskService.finishTask(task: widget.task);
 
@@ -188,12 +193,34 @@ class _FocusLockScreenState extends State<FocusLockScreen> {
         return;
       }
 
+      final int durationSeconds = result.durationSeconds;
       final int minutes = (durationSeconds / 60).ceil();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${widget.task.taskName} completed in $minutes min. +1 coin'),
         ),
       );
+
+      // Completing from focus mode should return the user to the main checklist tab.
+      // We switch tabs before any optional completion modal so back always lands on My List.
+      widget.onNavigateTab?.call(1);
+
+      if (result.rewardSummary != null && !_isOpeningCompletionScreen) {
+        _isOpeningCompletionScreen = true;
+        try {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChecklistCompleteScreen(
+                summary: result.rewardSummary!,
+                onBackToHome: () => widget.onNavigateTab?.call(1),
+              ),
+            ),
+          );
+        } finally {
+          _isOpeningCompletionScreen = false;
+        }
+      }
     } catch (_) {
       if (!mounted) {
         return;

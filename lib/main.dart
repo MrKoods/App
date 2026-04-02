@@ -100,7 +100,12 @@ class MicroWinsApp extends StatelessWidget {
 }
 
 class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+  final ValueNotifier<int>? tabIndexNotifier;
+
+  const MainNavigation({
+    super.key,
+    this.tabIndexNotifier,
+  });
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -110,6 +115,40 @@ class _MainNavigationState extends State<MainNavigation> {
   final FirestoreService _firestoreService = FirestoreService();
   final ActivityService _activityService = ActivityService();
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.tabIndexNotifier?.addListener(_handleExternalTabChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant MainNavigation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tabIndexNotifier == widget.tabIndexNotifier) {
+      return;
+    }
+
+    oldWidget.tabIndexNotifier?.removeListener(_handleExternalTabChange);
+    widget.tabIndexNotifier?.addListener(_handleExternalTabChange);
+  }
+
+  @override
+  void dispose() {
+    widget.tabIndexNotifier?.removeListener(_handleExternalTabChange);
+    super.dispose();
+  }
+
+  void _handleExternalTabChange() {
+    final int? nextIndex = widget.tabIndexNotifier?.value;
+    if (nextIndex == null || nextIndex == _selectedIndex || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedIndex = nextIndex;
+    });
+  }
 
   Future<void> _redeemReward(int cost, String rewardName, int coins) async {
     if (coins >= cost) {
@@ -142,6 +181,10 @@ class _MainNavigationState extends State<MainNavigation> {
   }
 
   void _onItemTapped(int index) {
+    if (widget.tabIndexNotifier?.value != index) {
+      widget.tabIndexNotifier?.value = index;
+    }
+
     setState(() {
       _selectedIndex = index;
     });
@@ -196,8 +239,15 @@ class _MainNavigationState extends State<MainNavigation> {
                     .toList();
 
                 final List<Widget> pages = [
-                  HomeScreen(tasks: tasks, coins: coins),
-                  ListScreen(tasks: tasks),
+                  HomeScreen(
+                    tasks: tasks,
+                    coins: coins,
+                    onNavigateTab: _onItemTapped,
+                  ),
+                  ListScreen(
+                    tasks: tasks,
+                    onNavigateTab: _onItemTapped,
+                  ),
                   HistoryScreen(history: history),
                   RewardsScreen(
                     coins: coins,

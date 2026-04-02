@@ -156,7 +156,15 @@ class FocusLockService extends ChangeNotifier {
   }
 
   Future<void> _waitForTransitionToFinish() async {
+    final Stopwatch stopwatch = Stopwatch()..start();
+
     while (_isTransitioningSession) {
+      // Guard against a stuck transition flag so focus actions cannot hang forever.
+      if (stopwatch.elapsed > const Duration(seconds: 2)) {
+        _isTransitioningSession = false;
+        break;
+      }
+
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
   }
@@ -217,6 +225,7 @@ class FocusLockService extends ChangeNotifier {
       await _prefs!.remove(_activeSessionKey);
     }
 
+    _isTransitioningSession = false;
     _activeSession = null;
     _prefs = null;
     notifyListeners();

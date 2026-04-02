@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:microwins/models/focus_session.dart';
 import 'package:microwins/models/task_model.dart';
+import 'package:microwins/models/task_completion_result.dart';
 import 'package:microwins/screens/focus_lock_screen.dart';
 import 'package:microwins/services/focus_lock_service.dart';
 
@@ -55,7 +56,8 @@ void main() {
                           session: buildSession(),
                           focusLockService: service,
                           onStopTask: (_) async {},
-                          onCompleteTask: (_) async => 60,
+                          onCompleteTask: (_) async =>
+                              const TaskCompletionResult(durationSeconds: 60),
                         ),
                       ),
                     );
@@ -79,7 +81,7 @@ void main() {
 
     expect(find.text('Focus lock is active'), findsOneWidget);
     expect(
-      find.text('Focus lock is active until you stop or complete the task.'),
+      find.text('Focus lock is active until you pause, stop, or complete the task.'),
       findsOneWidget,
     );
   });
@@ -98,13 +100,15 @@ void main() {
           onStopTask: (_) async {
             stopCalled = true;
           },
-          onCompleteTask: (_) async => 60,
+          onCompleteTask: (_) async =>
+              const TaskCompletionResult(durationSeconds: 60),
         ),
       ),
     );
 
     await tester.tap(find.text('Stop Task'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
 
     expect(stopCalled, isTrue);
     expect(service.isFocusLockActive, isFalse);
@@ -125,14 +129,15 @@ void main() {
           onStopTask: (_) async {},
           onCompleteTask: (_) async {
             completeCalled = true;
-            return 120;
+            return const TaskCompletionResult(durationSeconds: 120);
           },
         ),
       ),
     );
 
     await tester.tap(find.text('Complete Task'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
 
     expect(completeCalled, isTrue);
     expect(service.isFocusLockActive, isFalse);

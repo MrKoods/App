@@ -3,21 +3,25 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../models/completion_reward_summary.dart';
 import '../models/history_model.dart';
 import '../models/task_model.dart';
 import '../services/firestore_service.dart';
 import '../services/focus_lock_service.dart';
 import '../widgets/daily_summary_widget.dart';
 import '../widgets/task_tile.dart';
+import 'checklist_complete_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Task>? tasks;
   final int? coins;
+  final ValueChanged<int>? onNavigateTab;
 
   const HomeScreen({
     super.key,
     this.tasks,
     this.coins,
+    this.onNavigateTab,
   });
 
   @override
@@ -30,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
   Timer? _timer;
   DateTime _now = DateTime.now();
+  bool _isOpeningCompletionScreen = false;
 
   static const Color _backgroundColor = Color(0xFF090B10);
   static const Color _surfaceColor = Color(0xFF121826);
@@ -101,12 +106,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleFinishTask(Task task) async {
-    final int durationSeconds = await _firestoreService.finishTask(task: task);
+    final result = await _firestoreService.finishTask(task: task);
 
     if (!mounted) {
       return;
     }
 
+    final int durationSeconds = result.durationSeconds;
     final int minutes = (durationSeconds / 60).ceil();
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -114,6 +120,8 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text('${task.taskName} completed in $minutes min. +1 coin'),
       ),
     );
+
+    await _openCompletionScreenIfNeeded(result.rewardSummary);
   }
 
   Future<void> _handleCheckboxChanged(Task task, List<Task> tasks) async {
@@ -143,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    await _firestoreService.completeTaskDirectly(task: task);
+    final result = await _firestoreService.completeTaskDirectly(task: task);
 
     if (!mounted) {
       return;
@@ -154,6 +162,33 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text('${task.taskName} completed. +1 coin'),
       ),
     );
+
+    await _openCompletionScreenIfNeeded(result.rewardSummary);
+  }
+
+  Future<void> _openCompletionScreenIfNeeded(CompletionRewardSummary? summary) async {
+    if (summary == null || _isOpeningCompletionScreen || !mounted) {
+      return;
+    }
+
+    _isOpeningCompletionScreen = true;
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChecklistCompleteScreen(
+            summary: summary,
+            onBackToHome: () => widget.onNavigateTab?.call(1),
+            onViewRewards: () => widget.onNavigateTab?.call(3),
+          ),
+        ),
+      );
+    } finally {
+      _isOpeningCompletionScreen = false;
+    }
+
+    // Finishing from Home should take the user back to the main checklist tab.
+    widget.onNavigateTab?.call(1);
   }
 
   Future<void> _handleResetTask(Task task) async {
@@ -477,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: const Text(
-                                'Bright progress on a dark canvas',
+                                'The future belongs to those who prepare for it today.',
                                 style: TextStyle(
                                   color: _accentColor,
                                   fontWeight: FontWeight.w600,

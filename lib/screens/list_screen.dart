@@ -2,20 +2,24 @@
 
 import 'package:flutter/material.dart';
 
+import '../models/completion_reward_summary.dart';
 import '../models/focus_preset_model.dart';
 import '../models/preset_model.dart';
 import '../models/task_model.dart';
 import '../services/firestore_service.dart';
 import '../services/focus_lock_service.dart';
 import '../widgets/task_tile.dart';
+import 'checklist_complete_screen.dart';
 import 'share_checklist_screen.dart';
 
 class ListScreen extends StatefulWidget {
   final List<Task> tasks;
+  final ValueChanged<int>? onNavigateTab;
 
   const ListScreen({
     super.key,
     required this.tasks,
+    this.onNavigateTab,
   });
 
   @override
@@ -28,6 +32,7 @@ class _ListScreenState extends State<ListScreen> {
   Timer? _timer;
   DateTime _now = DateTime.now();
   bool _savingOrder = false;
+  bool _isOpeningCompletionScreen = false;
 
   static const Color _backgroundColor = Color(0xFF090B10);
   static const Color _surfaceColor = Color(0xFF121826);
@@ -131,13 +136,16 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   Future<void> _handleFinishTask(Task task) async {
-    final int durationSeconds = await _firestoreService.finishTask(task: task);
+    final result = await _firestoreService.finishTask(task: task);
     if (!mounted) return;
 
+    final int durationSeconds = result.durationSeconds;
     final int minutes = (durationSeconds / 60).ceil();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} completed in $minutes min. +1 coin')),
     );
+
+    await _openCompletionScreenIfNeeded(result.rewardSummary);
   }
 
   Future<void> _handleCheckboxChanged(Task task, List<Task> tasks) async {
@@ -159,11 +167,35 @@ class _ListScreenState extends State<ListScreen> {
       return;
     }
 
-    await _firestoreService.completeTaskDirectly(task: task);
+    final result = await _firestoreService.completeTaskDirectly(task: task);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${task.taskName} completed. +1 coin')),
     );
+
+    await _openCompletionScreenIfNeeded(result.rewardSummary);
+  }
+
+  Future<void> _openCompletionScreenIfNeeded(CompletionRewardSummary? summary) async {
+    if (summary == null || _isOpeningCompletionScreen || !mounted) {
+      return;
+    }
+
+    _isOpeningCompletionScreen = true;
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChecklistCompleteScreen(
+            summary: summary,
+            onBackToHome: () => widget.onNavigateTab?.call(1),
+            onViewRewards: () => widget.onNavigateTab?.call(3),
+          ),
+        ),
+      );
+    } finally {
+      _isOpeningCompletionScreen = false;
+    }
   }
 
   Future<void> _handleResetTask(Task task) async {

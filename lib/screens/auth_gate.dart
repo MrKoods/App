@@ -15,11 +15,18 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   final AuthService _authService = AuthService();
   late final Future<void> _startupAuthCheck;
+  final ValueNotifier<int> _tabIndexNotifier = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
     _startupAuthCheck = _applyRememberMeOnStartup();
+  }
+
+  @override
+  void dispose() {
+    _tabIndexNotifier.dispose();
+    super.dispose();
   }
 
   Future<void> _applyRememberMeOnStartup() async {
@@ -56,7 +63,10 @@ class _AuthGateState extends State<AuthGate> {
             }
 
             if (authSnapshot.hasData) {
-              return const FocusLockHost(child: MainNavigation());
+              return FocusLockHost(
+                tabIndexNotifier: _tabIndexNotifier,
+                child: MainNavigation(tabIndexNotifier: _tabIndexNotifier),
+              );
             }
 
             return const LoginScreen();

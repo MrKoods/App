@@ -15,6 +15,7 @@ class FocusLockHost extends StatefulWidget {
   final FocusLockService? focusLockService;
   final Stream<List<Task>>? taskStream;
   final Widget Function(Task task, FocusSession session)? focusScreenBuilder;
+  final ValueNotifier<int>? tabIndexNotifier;
 
   const FocusLockHost({
     super.key,
@@ -22,6 +23,7 @@ class FocusLockHost extends StatefulWidget {
     this.focusLockService,
     this.taskStream,
     this.focusScreenBuilder,
+    this.tabIndexNotifier,
   });
 
   @override
@@ -182,6 +184,11 @@ class _FocusLockHostState extends State<FocusLockHost> with WidgetsBindingObserv
                     task: activeTask,
                     session: session,
                     focusLockService: _focusLockService,
+                    onNavigateTab: (index) {
+                      if (widget.tabIndexNotifier?.value != index) {
+                        widget.tabIndexNotifier?.value = index;
+                      }
+                    },
                   );
                 },
               ),

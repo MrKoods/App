@@ -1,12 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/completion_reward_summary.dart';
 import '../models/history_model.dart';
 import '../models/preset_model.dart';
+import '../models/task_completion_result.dart';
 import '../models/task_model.dart';
 import 'activity_service.dart';
 
 class FirestoreService {
+  static const int _fullChecklistCoinsReward = 10;
+  static const int _fullChecklistXpReward = 25;
+  static const int _xpPerLevel = 100;
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -172,12 +178,12 @@ class FirestoreService {
     return totalDurationSeconds;
   }
 
-  Future<int> finishTask({required Task task}) async {
+  Future<TaskCompletionResult> finishTask({required Task task}) async {
     final DocumentSnapshot<Map<String, dynamic>> taskSnapshot =
         await tasksCollection.doc(task.id).get();
 
     if (!taskSnapshot.exists) {
-      return 0;
+      return const TaskCompletionResult(durationSeconds: 0);
     }
 
     final Task latestTask = Task.fromFirestore(taskSnapshot.id, taskSnapshot.data()!);
@@ -210,12 +216,16 @@ class FirestoreService {
       message: '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
     );
 
-    await _updateDailyProgress(referenceDate: latestTask.date ?? endTime);
+    final CompletionRewardSummary? rewardSummary =
+        await _updateDailyProgress(referenceDate: latestTask.date ?? endTime);
 
-    return safeDurationSeconds;
+    return TaskCompletionResult(
+      durationSeconds: safeDurationSeconds,
+      rewardSummary: rewardSummary,
+    );
   }
 
-  Future<int> completeTaskDirectly({required Task task}) async {
+  Future<TaskCompletionResult> completeTaskDirectly({required Task task}) async {
     final DateTime now = DateTime.now();
 
     await tasksCollection.doc(task.id).update({
@@ -232,12 +242,16 @@ class FirestoreService {
     });
 
     await addHistory('${task.taskName} completed in 0 minutes');
-    await _updateDailyProgress(referenceDate: now);
+    final CompletionRewardSummary? rewardSummary =
+        await _updateDailyProgress(referenceDate: now);
 
-    return 0;
+    return TaskCompletionResult(
+      durationSeconds: 0,
+      rewardSummary: rewardSummary,
+    );
   }
 
-  Future<void> markTaskCompletedFromFocus({
+  Future<CompletionRewardSummary?> markTaskCompletedFromFocus({
     required Task task,
     required int focusedSeconds,
   }) async {
@@ -253,7 +267,7 @@ class FirestoreService {
     });
 
     await addHistory('${task.taskName} completed with a focus session');
-    await _updateDailyProgress(referenceDate: now);
+    return _updateDailyProgress(referenceDate: now);
   }
 
   Future<void> resetTask({required Task task}) async {
@@ -294,6 +308,11 @@ class FirestoreService {
     required int perfectDays,
     required bool checklistCompletedToday,
     required bool rewardGivenToday,
+    required int xp,
+    required int level,
+    required int totalCompletedDays,
+    required List<String> unlockedBadges,
+    required List<String> unlockedTitles,
     DateTime? lastChecklistDate,
   }) async {
     await userDoc.update({
@@ -302,6 +321,11 @@ class FirestoreService {
       'perfectDays': perfectDays,
       'checklistCompletedToday': checklistCompletedToday,
       'rewardGivenToday': rewardGivenToday,
+      'xp': xp,
+      'level': level,
+      'totalCompletedDays': totalCompletedDays,
+      'unlockedBadges': unlockedBadges,
+      'unlockedTitles': unlockedTitles,
       'lastChecklistDate': lastChecklistDate?.toIso8601String(),
     });
   }
@@ -314,7 +338,11 @@ class FirestoreService {
     });
   }
 
-  Future<void> _updateDailyProgress({required DateTime referenceDate}) async {
+  // Builds a celebration summary every time the checklist becomes fully complete.
+  // Actual reward payout remains locked to once per calendar day.
+  Future<CompletionRewardSummary?> applyDailyChecklistCompletionReward({
+    required DateTime referenceDate,
+  }) async {
     final DocumentSnapshot<Map<String, dynamic>> userSnapshot = await userDoc.get();
     final Map<String, dynamic> userData = userSnapshot.data() ?? <String, dynamic>{};
     final DateTime? lastChecklistDate = _readDateTime(userData['lastChecklistDate']);
@@ -334,17 +362,62 @@ class FirestoreService {
     await userDoc.update({
       'checklistCompletedToday': allCompleted,
       'rewardGivenToday': alreadyRewardedToday,
+      'xp': _readInt(userData['xp']),
+      'level': _readInt(userData['level']) <= 0 ? 1 : _readInt(userData['level']),
+      'totalCompletedDays': _readInt(userData['totalCompletedDays']),
+      'unlockedBadges': _readStringList(userData['unlockedBadges']),
+      'unlockedTitles': _readStringList(userData['unlockedTitles']),
     });
 
-    if (!allCompleted || alreadyRewardedToday) {
-      return;
+    if (!allCompleted) {
+      return null;
+    }
+
+    final DateTime normalizedDate = DateTime(
+      referenceDate.year,
+      referenceDate.month,
+      referenceDate.day,
+    );
+
+    final int currentXp = _readInt(userData['xp']);
+    final int currentLevel = _readInt(userData['level']) <= 0 ? 1 : _readInt(userData['level']);
+
+    if (alreadyRewardedToday) {
+      return CompletionRewardSummary(
+        rewardGranted: false,
+        wasAlreadyClaimedToday: true,
+        coinsEarned: 0,
+        xpEarned: 0,
+        oldXp: currentXp,
+        newXp: currentXp,
+        oldLevel: currentLevel,
+        newLevel: currentLevel,
+        didLevelUp: false,
+        streak: _readInt(userData['currentStreak']),
+        perfectDays: _readInt(userData['perfectDays']),
+        unlockedBadges: const <String>[],
+        unlockedTitles: const <String>[],
+        completionDate: normalizedDate,
+        message: 'You already claimed today\'s rewards. Come back tomorrow for more XP and coins.',
+      );
     }
 
     int currentCoins = _readInt(userData['coins']);
     int currentStreak = 1;
     int longestStreak = _readInt(userData['longestStreak']);
     int perfectDays = _readInt(userData['perfectDays']) + 1;
-    int bonusCoins = 1;
+    int totalCompletedDays = _readInt(userData['totalCompletedDays']) + 1;
+    final int oldXp = currentXp;
+    final int oldLevel = currentLevel;
+    final int newXp = oldXp + _fullChecklistXpReward;
+    final int newLevel = _levelFromXp(newXp);
+    final bool didLevelUp = newLevel > oldLevel;
+    final List<String> currentBadges = _readStringList(userData['unlockedBadges']);
+    final List<String> currentTitles = _readStringList(userData['unlockedTitles']);
+    final List<String> unlockedBadges = <String>[];
+    final List<String> unlockedTitles = <String>[];
+
+    int bonusCoins = _fullChecklistCoinsReward;
 
     final DateTime previousDay = DateTime(
       referenceDate.year,
@@ -360,7 +433,7 @@ class FirestoreService {
       longestStreak = currentStreak;
     }
 
-    await addHistory('Daily checklist completed +1 coin');
+    await addHistory('Daily checklist completed +$_fullChecklistCoinsReward coins');
 
     // Post daily checklist completion to activity feed
     await ActivityService().postActivity(
@@ -386,6 +459,29 @@ class FirestoreService {
       );
     }
 
+    final bool unlockedPerfect3 = perfectDays >= 3 && !currentBadges.contains('Perfect 3');
+    final bool unlockedPerfect7 = perfectDays >= 7 && !currentBadges.contains('Perfect 7');
+    final bool unlockedStreak3Title =
+        currentStreak >= 3 && !currentTitles.contains('Consistent');
+
+    if (unlockedPerfect3) {
+      unlockedBadges.add('Perfect 3');
+      currentBadges.add('Perfect 3');
+      await addHistory('Unlocked badge: Perfect 3');
+    }
+
+    if (unlockedPerfect7) {
+      unlockedBadges.add('Perfect 7');
+      currentBadges.add('Perfect 7');
+      await addHistory('Unlocked badge: Perfect 7');
+    }
+
+    if (unlockedStreak3Title) {
+      unlockedTitles.add('Consistent');
+      currentTitles.add('Consistent');
+      await addHistory('Unlocked title: Consistent');
+    }
+
     currentCoins += bonusCoins;
 
     await updateCoins(currentCoins);
@@ -396,7 +492,49 @@ class FirestoreService {
       checklistCompletedToday: true,
       rewardGivenToday: true,
       lastChecklistDate: referenceDate,
+      xp: newXp,
+      level: newLevel,
+      totalCompletedDays: totalCompletedDays,
+      unlockedBadges: currentBadges,
+      unlockedTitles: currentTitles,
     );
+
+    await addHistory(
+      'Full checklist reward +$bonusCoins coins +$_fullChecklistXpReward XP (Level $oldLevel -> $newLevel)',
+    );
+
+    if (didLevelUp) {
+      await ActivityService().postActivity(
+        type: 'streak_milestone',
+        message: 'Level up! Reached level $newLevel',
+      );
+    }
+
+    return CompletionRewardSummary(
+      rewardGranted: true,
+      wasAlreadyClaimedToday: false,
+      coinsEarned: bonusCoins,
+      xpEarned: _fullChecklistXpReward,
+      oldXp: oldXp,
+      newXp: newXp,
+      oldLevel: oldLevel,
+      newLevel: newLevel,
+      didLevelUp: didLevelUp,
+      streak: currentStreak,
+      perfectDays: perfectDays,
+      unlockedBadges: unlockedBadges,
+      unlockedTitles: unlockedTitles,
+      completionDate: normalizedDate,
+      message: didLevelUp
+          ? 'Level Up! You reached Level $newLevel.'
+          : 'Rewards claimed for today. Nice work showing up.',
+    );
+  }
+
+  Future<CompletionRewardSummary?> _updateDailyProgress({
+    required DateTime referenceDate,
+  }) {
+    return applyDailyChecklistCompletionReward(referenceDate: referenceDate);
   }
 
   int _coinsFromHistory(String message) {
@@ -426,6 +564,22 @@ class FirestoreService {
     }
 
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _levelFromXp(int xpValue) {
+    if (xpValue <= 0) {
+      return 1;
+    }
+
+    return (xpValue ~/ _xpPerLevel) + 1;
+  }
+
+  List<String> _readStringList(dynamic value) {
+    if (value is List) {
+      return value.map((item) => item.toString()).toList();
+    }
+
+    return <String>[];
   }
 
   bool _isSameDay(DateTime? left, DateTime right) {
