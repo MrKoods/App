@@ -13,6 +13,7 @@ class Task {
   final DateTime? date;
   final bool completed;
   final String? focusModeId;
+  final int? sortOrder;
 
   Task({
     required this.id,
@@ -30,6 +31,7 @@ class Task {
     bool? completed,
     bool? isCompleted,
     this.focusModeId,
+    this.sortOrder,
   })  : userId = userId ?? '',
         taskName = taskName ?? title ?? '',
         category = category ?? 'Personal',
@@ -63,6 +65,7 @@ class Task {
     DateTime? date,
     bool? completed,
     String? focusModeId,
+    int? sortOrder,
     bool clearStartTime = false,
     bool clearEndTime = false,
     bool clearFocusModeId = false,
@@ -80,6 +83,7 @@ class Task {
       date: date ?? this.date,
       completed: completed ?? this.completed,
       focusModeId: clearFocusModeId ? null : focusModeId ?? this.focusModeId,
+      sortOrder: sortOrder ?? this.sortOrder,
     );
   }
 
@@ -97,6 +101,7 @@ class Task {
       date: _parseDateTime(data['date']),
       completed: data['completed'] == true,
       focusModeId: _parseFocusModeId(data['focusModeId']),
+      sortOrder: _parseNullableInt(data['sortOrder']),
     );
   }
 
@@ -113,6 +118,7 @@ class Task {
       'date': date?.toIso8601String(),
       'completed': completed,
       'focusModeId': focusModeId,
+      'sortOrder': sortOrder,
     };
   }
 
@@ -160,6 +166,22 @@ class Task {
     }
 
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static int? _parseNullableInt(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is int) {
+      return value;
+    }
+
+    if (value is double) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value.toString());
   }
 
   static String? _parseFocusModeId(dynamic value) {

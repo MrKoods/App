@@ -4,17 +4,20 @@ class TaskTemplate {
   final String taskName;
   final String category;
   final String? focusModeId;
+  final int sequence;
 
   const TaskTemplate({
     required this.taskName,
     required this.category,
     this.focusModeId,
+    this.sequence = 0,
   });
 
   Map<String, dynamic> toMap() => {
         'taskName': taskName,
         'category': category,
         'focusModeId': focusModeId,
+        'sequence': sequence,
       };
 
   factory TaskTemplate.fromMap(Map<String, dynamic> data) {
@@ -24,7 +27,14 @@ class TaskTemplate {
       taskName: (data['taskName'] ?? '').toString(),
       category: (data['category'] ?? 'Personal').toString(),
       focusModeId: rawFocusModeId.isEmpty ? null : rawFocusModeId,
+      sequence: _parseInt(data['sequence']),
     );
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
 
@@ -47,14 +57,17 @@ class TaskPreset {
 
   factory TaskPreset.fromFirestore(String id, Map<String, dynamic> data) {
     final List<dynamic> rawTasks = (data['tasks'] as List<dynamic>?) ?? [];
+    final List<TaskTemplate> templates = rawTasks
+        .whereType<Map>()
+        .map((t) => TaskTemplate.fromMap(Map<String, dynamic>.from(t)))
+        .toList()
+      ..sort((a, b) => a.sequence.compareTo(b.sequence));
+
     return TaskPreset(
       id: id,
       userId: (data['userId'] ?? '').toString(),
       name: (data['name'] ?? 'Unnamed Preset').toString(),
-      tasks: rawTasks
-          .whereType<Map>()
-          .map((t) => TaskTemplate.fromMap(Map<String, dynamic>.from(t)))
-          .toList(),
+      tasks: templates,
       dayAssignment: (data['dayAssignment'] ?? 'Any').toString(),
       createdAt: _parseDateTime(data['createdAt']),
     );

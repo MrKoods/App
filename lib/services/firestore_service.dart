@@ -97,6 +97,8 @@ class FirestoreService {
     required String taskName,
     required String category,
   }) async {
+    final int sortOrder = DateTime.now().microsecondsSinceEpoch;
+
     await tasksCollection.add({
       'userId': uid,
       'taskName': taskName,
@@ -109,6 +111,7 @@ class FirestoreService {
       'date': DateTime.now().toIso8601String(),
       'completed': false,
       'focusModeId': null,
+      'sortOrder': sortOrder,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -485,6 +488,8 @@ class FirestoreService {
     required DateTime selectedDate,
   }) async {
     final WriteBatch batch = _firestore.batch();
+    final int baseSortOrder = DateTime.now().microsecondsSinceEpoch;
+    int sequenceOffset = 0;
 
     for (final dynamic input in taskInputs) {
       // Each taskInput has: controller (TextEditingController), category (String)
@@ -508,8 +513,11 @@ class FirestoreService {
         'date': selectedDate.toIso8601String(),
         'completed': false,
         'focusModeId': null,
+        'sortOrder': baseSortOrder + sequenceOffset,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      sequenceOffset += 1;
     }
 
     await batch.commit();
@@ -525,6 +533,7 @@ class FirestoreService {
     // Convert TaskInput objects to task templates
     final List<Map<String, dynamic>> taskTemplates = [];
 
+    int sequence = 0;
     for (final dynamic input in taskInputs) {
       final String taskName = input.controller.text.trim();
       final String category = input.category;
@@ -537,7 +546,10 @@ class FirestoreService {
         'taskName': taskName,
         'category': category,
         'focusModeId': null,
+        'sequence': sequence,
       });
+
+      sequence += 1;
     }
 
     if (taskTemplates.isEmpty) {
@@ -560,14 +572,25 @@ class FirestoreService {
     required String dayAssignment,
     required List<Task> tasks,
   }) async {
-    final List<Map<String, dynamic>> taskTemplates = tasks
-        .map(
-          (t) => {
+    final List<Task> orderedTasks = [...tasks]
+      ..sort((a, b) {
+        final int left = a.sortOrder ?? 1 << 30;
+        final int right = b.sortOrder ?? 1 << 30;
+        return left.compareTo(right);
+      });
+
+    final List<Map<String, dynamic>> taskTemplates = orderedTasks
+        .asMap()
+        .entries
+        .map((entry) {
+          final Task t = entry.value;
+          return <String, dynamic>{
             'taskName': t.taskName,
             'category': t.category,
             'focusModeId': t.focusModeId,
-          },
-        )
+            'sequence': entry.key,
+          };
+        })
         .toList();
 
     await presetsCollection.add({
@@ -576,6 +599,43 @@ class FirestoreService {
       'dayAssignment': dayAssignment,
       'tasks': taskTemplates,
       'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Overwrites an existing preset with a new snapshot of tasks.
+  Future<void> updatePresetFromTasks({
+    required String presetId,
+    required String name,
+    required String dayAssignment,
+    required List<Task> tasks,
+  }) async {
+    final List<Task> orderedTasks = [...tasks]
+      ..sort((a, b) {
+        final int left = a.sortOrder ?? 1 << 30;
+        final int right = b.sortOrder ?? 1 << 30;
+        return left.compareTo(right);
+      });
+
+    final List<Map<String, dynamic>> taskTemplates = orderedTasks
+        .asMap()
+        .entries
+        .map((entry) {
+          final Task t = entry.value;
+          return <String, dynamic>{
+            'taskName': t.taskName,
+            'category': t.category,
+            'focusModeId': t.focusModeId,
+            'sequence': entry.key,
+          };
+        })
+        .toList();
+
+    await presetsCollection.doc(presetId).update({
+      'userId': uid,
+      'name': name,
+      'dayAssignment': dayAssignment,
+      'tasks': taskTemplates,
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -618,6 +678,9 @@ class FirestoreService {
 
   Future<void> applyPreset(TaskPreset preset, {bool wipeFirst = false}) async {
     final WriteBatch batch = _firestore.batch();
+    final List<TaskTemplate> orderedTemplates = [...preset.tasks]
+      ..sort((a, b) => a.sequence.compareTo(b.sequence));
+    final int baseSortOrder = wipeFirst ? 0 : DateTime.now().microsecondsSinceEpoch;
 
     if (wipeFirst) {
       final QuerySnapshot<Map<String, dynamic>> existingTasks =
@@ -627,7 +690,8 @@ class FirestoreService {
       }
     }
 
-    for (final TaskTemplate template in preset.tasks) {
+    for (int i = 0; i < orderedTemplates.length; i++) {
+      final TaskTemplate template = orderedTemplates[i];
       final DocumentReference<Map<String, dynamic>> ref = tasksCollection.doc();
       batch.set(ref, {
         'userId': uid,
@@ -641,9 +705,21 @@ class FirestoreService {
         'date': DateTime.now().toIso8601String(),
         'completed': false,
         'focusModeId': template.focusModeId,
+        'sortOrder': baseSortOrder + i,
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
+    await batch.commit();
+  }
+
+  Future<void> updateTaskSequence(List<Task> orderedTasks) async {
+    final WriteBatch batch = _firestore.batch();
+
+    for (int i = 0; i < orderedTasks.length; i++) {
+      final Task task = orderedTasks[i];
+      batch.update(tasksCollection.doc(task.id), {'sortOrder': i});
+    }
+
     await batch.commit();
   }
 }

@@ -30,6 +30,7 @@ class _ListScreenState extends State<ListScreen> {
   Timer? _timer;
   DateTime _now = DateTime.now();
   String? _activeAudioTaskId;
+  bool _savingOrder = false;
 
   static const Color _backgroundColor = Color(0xFF090B10);
   static const Color _surfaceColor = Color(0xFF121826);
@@ -229,10 +230,51 @@ class _ListScreenState extends State<ListScreen> {
     );
   }
 
-  int _taskPriority(Task task) {
-    if (task.isActive) return 0;
-    if (task.isNotStarted) return 1;
-    return 2;
+  int _orderValue(Task task) => task.sortOrder ?? (1 << 30);
+
+  List<Task> _orderedTasks(List<Task> tasks) {
+    final List<Task> ordered = [...tasks];
+    ordered.sort((a, b) => _orderValue(a).compareTo(_orderValue(b)));
+    return ordered;
+  }
+
+  Future<void> _reorderTasks(int oldIndex, int newIndex) async {
+    if (_savingOrder) {
+      return;
+    }
+
+    final List<Task> ordered = _orderedTasks(widget.tasks);
+    if (oldIndex < 0 || oldIndex >= ordered.length) {
+      return;
+    }
+
+    final int targetIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    if (targetIndex < 0 || targetIndex >= ordered.length) {
+      return;
+    }
+
+    final Task moved = ordered.removeAt(oldIndex);
+    ordered.insert(targetIndex, moved);
+
+    setState(() {
+      _savingOrder = true;
+    });
+
+    try {
+      await _firestoreService.updateTaskSequence(ordered);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save task order.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingOrder = false;
+        });
+      }
+    }
   }
 
   Duration _elapsedForTask(Task task) {
@@ -459,15 +501,27 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   // Save preset dialog
-  void _showSavePresetDialog() {
+  void _showSavePresetDialog(List<TaskPreset> presets) {
     final TextEditingController nameController = TextEditingController();
     String selectedDay = _todayName;
+    bool replaceExisting = false;
+    String? selectedPresetId = presets.isNotEmpty ? presets.first.id : null;
 
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (_, setDialogState) {
+            TaskPreset? selectedPreset;
+            if (selectedPresetId != null) {
+              for (final TaskPreset preset in presets) {
+                if (preset.id == selectedPresetId) {
+                  selectedPreset = preset;
+                  break;
+                }
+              }
+            }
+
             return AlertDialog(
               backgroundColor: _surfaceColor,
               title: const Text('Save as Preset',
@@ -476,35 +530,87 @@ class _ListScreenState extends State<ListScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: nameController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Preset name',
-                      labelStyle: TextStyle(color: Colors.white70),
-                      enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.white30)),
-                      focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: _accentColor)),
+                  if (presets.isNotEmpty)
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Replace existing preset',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      value: replaceExisting,
+                      activeThumbColor: _accentColor,
+                      activeTrackColor: _accentColor.withValues(alpha: 0.35),
+                      onChanged: (value) {
+                        setDialogState(() => replaceExisting = value);
+                      },
                     ),
-                  ),
+                  if (replaceExisting) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Select preset to replace',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButton<String>(
+                      value: selectedPresetId,
+                      dropdownColor: _surfaceColor,
+                      style: const TextStyle(color: Colors.white),
+                      isExpanded: true,
+                      underline: Container(height: 1, color: Colors.white30),
+                      items: presets
+                          .map(
+                            (p) => DropdownMenuItem(
+                              value: p.id,
+                              child: Text('${p.name} (${p.dayAssignment})'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() => selectedPresetId = v);
+                        }
+                      },
+                    ),
+                  ] else ...[
+                    TextField(
+                      controller: nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Preset name',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(color: Colors.white30)),
+                        focusedBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(color: _accentColor)),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
-                  const Text('Assign to day',
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 8),
-                  DropdownButton<String>(
-                    value: selectedDay,
-                    dropdownColor: _surfaceColor,
-                    style: const TextStyle(color: Colors.white),
-                    isExpanded: true,
-                    underline: Container(height: 1, color: Colors.white30),
-                    items: _dayOptions
-                        .map((d) => DropdownMenuItem(value: d, child: Text(d)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) setDialogState(() => selectedDay = v);
-                    },
-                  ),
+                  if (!replaceExisting) ...[
+                    const Text('Assign to day',
+                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    DropdownButton<String>(
+                      value: selectedDay,
+                      dropdownColor: _surfaceColor,
+                      style: const TextStyle(color: Colors.white),
+                      isExpanded: true,
+                      underline: Container(height: 1, color: Colors.white30),
+                      items: _dayOptions
+                          .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialogState(() => selectedDay = v);
+                      },
+                    ),
+                  ] else ...[
+                    Text(
+                      selectedPreset == null
+                          ? 'Choose a preset to replace.'
+                          : 'This will overwrite the saved tasks in "${selectedPreset.name}".',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Text('${widget.tasks.length} task(s) will be saved',
                       style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -521,20 +627,45 @@ class _ListScreenState extends State<ListScreen> {
                       backgroundColor: _accentColor,
                       foregroundColor: Colors.black),
                   onPressed: () async {
+                    if (replaceExisting) {
+                      if (selectedPreset == null) {
+                        return;
+                      }
+
+                      Navigator.pop(dialogContext);
+                      await _firestoreService.updatePresetFromTasks(
+                        presetId: selectedPreset.id,
+                        name: selectedPreset.name,
+                        dayAssignment: selectedPreset.dayAssignment,
+                        tasks: _orderedTasks(widget.tasks),
+                      );
+
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '"${selectedPreset.name}" updated with current list',
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
                     final String name = nameController.text.trim();
                     if (name.isEmpty) return;
                     Navigator.pop(dialogContext);
                     await _firestoreService.savePresetFromTasks(
                       name: name,
                       dayAssignment: selectedDay,
-                      tasks: widget.tasks,
+                      tasks: _orderedTasks(widget.tasks),
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('"$name" saved as preset')));
                     }
                   },
-                  child: const Text('Save'),
+                  child: Text(replaceExisting ? 'Replace' : 'Save'),
                 ),
               ],
             );
@@ -781,7 +912,9 @@ class _ListScreenState extends State<ListScreen> {
                     fontWeight: FontWeight.bold)),
             const Spacer(),
             TextButton.icon(
-              onPressed: widget.tasks.isEmpty ? null : _showSavePresetDialog,
+              onPressed: widget.tasks.isEmpty
+                  ? null
+                  : () => _showSavePresetDialog(presets),
               icon: const Icon(Icons.save_alt, size: 15),
               label: const Text('Save current list'),
               style: TextButton.styleFrom(
@@ -869,8 +1002,7 @@ class _ListScreenState extends State<ListScreen> {
     _syncTimer(widget.tasks);
     _syncTaskAudioState(widget.tasks);
 
-    final List<Task> sortedTasks = [...widget.tasks]
-      ..sort((l, r) => _taskPriority(l).compareTo(_taskPriority(r)));
+    final List<Task> sortedTasks = _orderedTasks(widget.tasks);
 
     return Container(
       color: _backgroundColor,
@@ -927,32 +1059,41 @@ class _ListScreenState extends State<ListScreen> {
                         child: Text('No tasks yet. Tap + to add one.',
                             style: TextStyle(
                                 color: Colors.white70, fontSize: 18)))
-                    : ListView.builder(
+                  : ReorderableListView.builder(
+                    onReorder: _reorderTasks,
+                    buildDefaultDragHandles: false,
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
                         itemCount: sortedTasks.length,
                         itemBuilder: (context, index) {
                           final Task task = sortedTasks[index];
-                          return TaskTile(
-                            task: task,
-                            onReset: task.completed
-                                ? () => _handleResetTask(task)
-                                : null,
-                            onCheckboxChanged: (_) =>
-                                _handleCheckboxChanged(task, widget.tasks),
-                            elapsedDuration: task.isActive
-                                ? _elapsedForTask(task)
-                                : null,
-                            onStart: (task.isNotStarted || task.isPaused)
-                                ? () => _handleStartTask(task)
-                                : null,
-                            onFinish: task.isActive
-                                ? () => _handleFinishTask(task)
-                                : null,
-                            onFocus: task.completed
-                                ? null
-                                : () => _openFocusModePicker(task),
-                            focusModeLabel: _focusModeLabel(task),
-                            onDelete: () => _handleDeleteTask(task),
+                      return Padding(
+                      key: ValueKey(task.id),
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: ReorderableDelayedDragStartListener(
+                        index: index,
+                        child: TaskTile(
+                        task: task,
+                        onReset: task.completed
+                          ? () => _handleResetTask(task)
+                          : null,
+                        onCheckboxChanged: (_) =>
+                          _handleCheckboxChanged(task, widget.tasks),
+                        elapsedDuration: task.isActive
+                          ? _elapsedForTask(task)
+                          : null,
+                        onStart: (task.isNotStarted || task.isPaused)
+                          ? () => _handleStartTask(task)
+                          : null,
+                        onFinish: task.isActive
+                          ? () => _handleFinishTask(task)
+                          : null,
+                        onFocus: task.completed
+                          ? null
+                          : () => _openFocusModePicker(task),
+                        focusModeLabel: _focusModeLabel(task),
+                        onDelete: () => _handleDeleteTask(task),
+                        ),
+                      ),
                           );
                         },
                       ),

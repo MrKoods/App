@@ -45,14 +45,6 @@ class FocusLibrary {
       tip: 'Pick one clear objective and finish that before switching.',
     ),
     FocusPreset(
-      id: 'reading',
-      title: 'Reading',
-      description: 'Calm medium session for study, review, and comprehension.',
-      suggestedMinutes: 35,
-      suggestedSoundLabel: 'Ambient Focus',
-      tip: 'Keep notes simple. Capture key ideas instead of full summaries.',
-    ),
-    FocusPreset(
       id: 'creative_work',
       title: 'Creative Work',
       description: 'Flow-oriented mode for writing, design, and ideation.',

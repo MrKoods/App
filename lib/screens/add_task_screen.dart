@@ -281,6 +281,16 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     });
   }
 
+  void _reorderTaskInput(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final TaskInput item = _tasks.removeAt(oldIndex);
+      _tasks.insert(newIndex, item);
+    });
+  }
+
   @override
   void dispose() {
     // Dispose all task controllers
@@ -452,70 +462,94 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   ),
                   const SizedBox(height: 18),
 
+                  const Text(
+                    'Long press and drag to change task order.',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+
                   // Task input rows
-                  ..._tasks.asMap().entries.map((entry) {
-                    final int index = entry.key;
-                    final TaskInput task = entry.value;
+                  ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    itemCount: _tasks.length,
+                    onReorder: _reorderTaskInput,
+                    itemBuilder: (context, index) {
+                      final TaskInput task = _tasks[index];
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Column(
-                        children: [
-                          // Task name input
-                          TextField(
-                            controller: task.controller,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Task ${index + 1}',
-                              prefixIcon: const Icon(Icons.task_alt, color: _accentColor),
-                              suffixIcon: _tasks.length > 1
-                                  ? IconButton(
-                                      icon: const Icon(Icons.close, color: Colors.white38),
-                                      onPressed: () => _removeTaskInput(index),
-                                    )
-                                  : null,
+                      return Padding(
+                        key: ValueKey(task.controller),
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: task.controller,
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      labelText: 'Task ${index + 1}',
+                                      prefixIcon: const Icon(Icons.task_alt, color: _accentColor),
+                                      suffixIcon: _tasks.length > 1
+                                          ? IconButton(
+                                              icon: const Icon(Icons.close, color: Colors.white38),
+                                              onPressed: () => _removeTaskInput(index),
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(6),
+                                    child: Icon(Icons.drag_indicator, color: Colors.white54),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Category dropdown
-                          DropdownButtonFormField<String>(
-                            initialValue: task.category,
-                            dropdownColor: _surfaceAltColor,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: const InputDecoration(
-                              labelText: 'Category',
-                              prefixIcon: Icon(Icons.palette_outlined, color: _secondaryAccent),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: task.category,
+                              dropdownColor: _surfaceAltColor,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: const InputDecoration(
+                                labelText: 'Category',
+                                prefixIcon: Icon(Icons.palette_outlined, color: _secondaryAccent),
+                              ),
+                              items: [
+                                DropdownMenuItem(
+                                  value: 'School',
+                                  child: Text('School', style: TextStyle(color: _categoryColor('School'))),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Health',
+                                  child: Text('Health', style: TextStyle(color: _categoryColor('Health'))),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Productivity',
+                                  child: Text('Productivity',
+                                      style: TextStyle(color: _categoryColor('Productivity'))),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Personal',
+                                  child: Text('Personal', style: TextStyle(color: _categoryColor('Personal'))),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  task.category = value!;
+                                });
+                              },
                             ),
-                            items: [
-                              DropdownMenuItem(
-                                value: 'School',
-                                child: Text('School', style: TextStyle(color: _categoryColor('School'))),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Health',
-                                child: Text('Health', style: TextStyle(color: _categoryColor('Health'))),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Productivity',
-                                child: Text('Productivity',
-                                    style: TextStyle(color: _categoryColor('Productivity'))),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Personal',
-                                child: Text('Personal', style: TextStyle(color: _categoryColor('Personal'))),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                task.category = value!;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                    }),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
 
                   // Add task button
                   const SizedBox(height: 8),
