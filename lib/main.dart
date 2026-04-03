@@ -11,11 +11,11 @@ import 'screens/home_screen.dart';
 import 'screens/list_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/rewards_screen.dart';
+import 'screens/progress_screen.dart';
 import 'screens/add_task_screen.dart';
 import 'screens/friends_screen.dart';
 import 'screens/shared_checklists_screen.dart';
 import 'services/auth_service.dart';
-import 'services/activity_service.dart';
 import 'services/firestore_service.dart';
 import 'services/focus_lock_service.dart';
 
@@ -102,10 +102,7 @@ class MicroWinsApp extends StatelessWidget {
 class MainNavigation extends StatefulWidget {
   final ValueNotifier<int>? tabIndexNotifier;
 
-  const MainNavigation({
-    super.key,
-    this.tabIndexNotifier,
-  });
+  const MainNavigation({super.key, this.tabIndexNotifier});
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -113,13 +110,13 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   final FirestoreService _firestoreService = FirestoreService();
-  final ActivityService _activityService = ActivityService();
   int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
     widget.tabIndexNotifier?.addListener(_handleExternalTabChange);
+    unawaited(_firestoreService.ensureStreakProtectionState());
   }
 
   @override
@@ -150,34 +147,39 @@ class _MainNavigationState extends State<MainNavigation> {
     });
   }
 
-  Future<void> _redeemReward(int cost, String rewardName, int coins) async {
-    if (coins >= cost) {
-      await _firestoreService.updateCoins(coins - cost);
-      await _firestoreService.addHistory('Redeemed $rewardName (-$cost coins)');
-      // Post to activity feed
-      await _activityService.postActivity(
-        type: 'reward_redeemed',
-        message: 'Redeemed reward: $rewardName',
-      );
+  Future<void> _redeemReward(String rewardId) async {
+    final RewardRedemptionResult result = await _firestoreService.redeemReward(
+      rewardId: rewardId,
+    );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$rewardName redeemed!'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Not enough coins'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+    if (!mounted) {
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _useSkipTodayToken() async {
+    final bool consumed = await _firestoreService.useSkipTodayToken();
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          consumed
+              ? 'Skip token used. Today is streak-safe.'
+              : 'No skip tokens available.',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _onItemTapped(int index) {
@@ -193,8 +195,15 @@ class _MainNavigationState extends State<MainNavigation> {
   void _openAddTaskScreen() {
     Navigator.push(
       context,
+      MaterialPageRoute(builder: (context) => const AddTaskScreen()),
+    );
+  }
+
+  void _openProgressScreen(Map<String, dynamic>? userData) {
+    Navigator.push(
+      context,
       MaterialPageRoute(
-        builder: (context) => const AddTaskScreen(),
+        builder: (context) => ProgressScreen(initialUserData: userData),
       ),
     );
   }
@@ -211,7 +220,7 @@ class _MainNavigationState extends State<MainNavigation> {
         }
 
         final Map<String, dynamic>? userData = userSnapshot.data!.data();
-        final int coins = userData?['coins'] ?? 0;
+        final int coins = (userData?['coins'] as num?)?.toInt() ?? 0;
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _firestoreService.getTasksStream(),
           builder: (context, taskSnapshot) {
@@ -235,7 +244,9 @@ class _MainNavigationState extends State<MainNavigation> {
                 }
 
                 final List<HistoryEntry> history = historySnapshot.data!.docs
-                    .map<HistoryEntry>((doc) => HistoryEntry.fromFirestore(doc.id, doc.data()))
+                    .map<HistoryEntry>(
+                      (doc) => HistoryEntry.fromFirestore(doc.id, doc.data()),
+                    )
                     .toList();
 
                 final List<Widget> pages = [
@@ -244,16 +255,15 @@ class _MainNavigationState extends State<MainNavigation> {
                     coins: coins,
                     onNavigateTab: _onItemTapped,
                   ),
-                  ListScreen(
-                    tasks: tasks,
-                    onNavigateTab: _onItemTapped,
-                  ),
+                  ListScreen(tasks: tasks, onNavigateTab: _onItemTapped),
                   HistoryScreen(history: history),
                   RewardsScreen(
                     coins: coins,
-                    onRedeemReward: (cost, rewardName) async {
-                      await _redeemReward(cost, rewardName, coins);
+                    userData: userData ?? const <String, dynamic>{},
+                    onRedeemReward: (rewardId) async {
+                      await _redeemReward(rewardId);
                     },
+                    onUseSkipToday: _useSkipTodayToken,
                   ),
                   const FriendsScreen(),
                   const SharedListScreen(),
@@ -263,6 +273,11 @@ class _MainNavigationState extends State<MainNavigation> {
                   appBar: AppBar(
                     title: const Text('MicroWins'),
                     actions: [
+                      IconButton(
+                        icon: const Icon(Icons.query_stats),
+                        tooltip: 'Progress',
+                        onPressed: () => _openProgressScreen(userData),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.logout),
                         onPressed: () async {

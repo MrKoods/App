@@ -24,20 +24,24 @@ class UserService {
       'unlockedTitles': <String>[],
       'checklistCompletedToday': false,
       'rewardGivenToday': false,
+      'lastChecklistDate': null,
+      'streakFreezeCount': 0,
+      'missedDayPassCount': 0,
+      'autoCompleteTaskTokens': 0,
+      'streakShieldDays': 0,
+      'doubleXpTomorrow': false,
+      'doubleCoinsTomorrow': false,
+      'skipTodayTokens': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
   Future<void> updateChecklistCompleted(bool value) async {
-    await userDoc.update({
-      'checklistCompletedToday': value,
-    });
+    await userDoc.update({'checklistCompletedToday': value});
   }
 
   Future<void> updateRewardGiven(bool value) async {
-    await userDoc.update({
-      'rewardGivenToday': value,
-    });
+    await userDoc.update({'rewardGivenToday': value});
   }
 
   Future<void> updateStreak({

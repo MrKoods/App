@@ -10,6 +10,7 @@ class TaskTile extends StatelessWidget {
   final VoidCallback? onFocus;
   final VoidCallback? onReset;
   final VoidCallback? onDelete;
+  final VoidCallback? onAutoCompleteToken;
   final ValueChanged<bool?>? onCheckboxChanged;
   final Duration? elapsedDuration;
   final String? focusModeLabel;
@@ -23,6 +24,7 @@ class TaskTile extends StatelessWidget {
     this.onFocus,
     this.onReset,
     this.onDelete,
+    this.onAutoCompleteToken,
     this.onCheckboxChanged,
     this.elapsedDuration,
     this.focusModeLabel,
@@ -56,7 +58,10 @@ class TaskTile extends StatelessWidget {
 
   Color _getCardBackground() {
     final Color categoryColor = _getCategoryColor(task.category);
-    return Color.alphaBlend(categoryColor.withValues(alpha: 0.12), const Color(0xFF121826));
+    return Color.alphaBlend(
+      categoryColor.withValues(alpha: 0.12),
+      const Color(0xFF121826),
+    );
   }
 
   String _formatStatus(String status) {
@@ -77,8 +82,14 @@ class TaskTile extends StatelessWidget {
 
   String _formatElapsed(Duration value) {
     final String hours = value.inHours.toString().padLeft(2, '0');
-    final String minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final String seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final String minutes = value.inMinutes
+        .remainder(60)
+        .toString()
+        .padLeft(2, '0');
+    final String seconds = value.inSeconds
+        .remainder(60)
+        .toString()
+        .padLeft(2, '0');
     return '$hours:$minutes:$seconds';
   }
 
@@ -189,9 +200,7 @@ class TaskTile extends StatelessWidget {
           const SizedBox(height: 8),
           TextButton(
             onPressed: onReset,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white70,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.white70),
             child: const Text('Reset'),
           ),
         ],
@@ -212,20 +221,27 @@ class TaskTile extends StatelessWidget {
         const SizedBox(height: 8),
         TextButton(
           onPressed: onFocus,
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF55E6C1),
-          ),
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFF55E6C1)),
           child: Text(
             focusModeLabel == null ? 'Focus Mode' : 'Focus: $focusModeLabel',
           ),
         ),
+        if (onAutoCompleteToken != null)
+          TextButton(
+            onPressed: onAutoCompleteToken,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFFFC857),
+            ),
+            child: const Text('Use Auto-Complete Token'),
+          ),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool useLegacyChecklist = onStart == null && onFinish == null && onTap != null;
+    final bool useLegacyChecklist =
+        onStart == null && onFinish == null && onTap != null;
 
     return Card(
       color: _getCardBackground(),
@@ -233,9 +249,7 @@ class TaskTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: _getStatusColor().withValues(alpha: 0.35),
-        ),
+        side: BorderSide(color: _getStatusColor().withValues(alpha: 0.35)),
       ),
       child: useLegacyChecklist
           ? _buildLegacyChecklistTile()
@@ -267,8 +281,9 @@ class TaskTile extends StatelessWidget {
                                         color: Colors.white,
                                         fontSize: 18,
                                         fontWeight: FontWeight.w700,
-                                        decoration:
-                                            task.completed ? TextDecoration.lineThrough : null,
+                                        decoration: task.completed
+                                            ? TextDecoration.lineThrough
+                                            : null,
                                         decorationColor: Colors.white54,
                                       ),
                                     ),
@@ -295,9 +310,14 @@ class TaskTile extends StatelessWidget {
                               runSpacing: 8,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: _getStatusColor().withValues(alpha: 0.18),
+                                    color: _getStatusColor().withValues(
+                                      alpha: 0.18,
+                                    ),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(
@@ -310,9 +330,14 @@ class TaskTile extends StatelessWidget {
                                   ),
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: _getCategoryColor(task.category).withValues(alpha: 0.16),
+                                    color: _getCategoryColor(
+                                      task.category,
+                                    ).withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(

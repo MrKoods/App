@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/completion_reward_summary.dart';
+import '../services/xp_progression_service.dart';
 import 'achievements_placeholder_screen.dart';
 
 class ChecklistCompleteScreen extends StatefulWidget {
@@ -18,7 +19,8 @@ class ChecklistCompleteScreen extends StatefulWidget {
   });
 
   @override
-  State<ChecklistCompleteScreen> createState() => _ChecklistCompleteScreenState();
+  State<ChecklistCompleteScreen> createState() =>
+      _ChecklistCompleteScreenState();
 }
 
 class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
@@ -61,14 +63,6 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
 
     final int delta = summary.newXp - summary.oldXp;
     return summary.oldXp + (delta * _xpAnimation.value).round();
-  }
-
-  int _levelFromXp(int xp) {
-    if (xp <= 0) {
-      return 1;
-    }
-
-    return (xp ~/ 100) + 1;
   }
 
   String _formatDate(DateTime date) {
@@ -117,13 +111,17 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
       curve: Interval(0.2 + (order * 0.1), 0.9, curve: Curves.easeOut),
     );
 
-    final Animation<Offset> slide = Tween<Offset>(
-      begin: const Offset(0, 0.16),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Interval(0.2 + (order * 0.1), 0.95, curve: Curves.easeOutCubic),
-    ));
+    final Animation<Offset> slide =
+        Tween<Offset>(begin: const Offset(0, 0.16), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: Interval(
+              0.2 + (order * 0.1),
+              0.95,
+              curve: Curves.easeOutCubic,
+            ),
+          ),
+        );
 
     return FadeTransition(
       opacity: fade,
@@ -349,11 +347,13 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
           animation: _controller,
           builder: (context, _) {
             final int currentXp = _animatedXp;
-            final int currentLevel = _levelFromXp(currentXp);
-            final int xpWithinLevel = currentXp % 100;
-            final double levelProgress = xpWithinLevel / 100;
+            final XpProgressSnapshot xpProgress = XpProgressionService.fromXp(
+              currentXp,
+            );
             final bool inLevelUpState =
-              summary.rewardGranted && summary.didLevelUp && currentLevel > summary.oldLevel;
+                summary.rewardGranted &&
+                summary.didLevelUp &&
+                xpProgress.level > summary.oldLevel;
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 26),
@@ -367,7 +367,9 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                       end: Alignment.bottomRight,
                       colors: [Color(0xFF1A243A), Color(0xFF0F1625)],
                     ),
-                    border: Border.all(color: _accentColor.withValues(alpha: 0.35)),
+                    border: Border.all(
+                      color: _accentColor.withValues(alpha: 0.35),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -383,10 +385,7 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                       const SizedBox(height: 8),
                       const Text(
                         'Nice work. You showed up today.',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 15,
-                        ),
+                        style: TextStyle(color: Colors.white70, fontSize: 15),
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -399,7 +398,10 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                       if (summary.wasAlreadyClaimedToday) ...[
                         const SizedBox(height: 14),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: _secondaryAccent.withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(999),
@@ -415,7 +417,10 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                       ] else if (inLevelUpState) ...[
                         const SizedBox(height: 14),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: _secondaryAccent.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(999),
@@ -435,55 +440,64 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                 const SizedBox(height: 18),
                 _buildMessageCard(),
                 const SizedBox(height: 14),
-                if (summary.rewardGranted) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: _surfaceColor,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.auto_graph, color: _accentColor),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Level $currentLevel',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _surfaceColor,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.auto_graph, color: _accentColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Level ${xpProgress.level} • ${xpProgress.rankTitle}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
-                            const Spacer(),
-                            Text(
-                              '$xpWithinLevel / 100 XP',
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            minHeight: 12,
-                            value: levelProgress.clamp(0, 1),
-                            backgroundColor: Colors.white12,
-                            valueColor: const AlwaysStoppedAnimation<Color>(_accentColor),
+                          ),
+                          const Spacer(),
+                          Text(
+                            xpProgress.xpRequiredForNextLevel > 0
+                                ? '${xpProgress.currentXpWithinLevel} / ${xpProgress.xpRequiredForNextLevel} XP'
+                                : 'MAX',
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 12,
+                          value: xpProgress.progressPercent,
+                          backgroundColor: Colors.white12,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            _accentColor,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '+${summary.xpEarned} XP gained',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        summary.rewardGranted
+                            ? '+${summary.xpEarned} XP gained • ${xpProgress.totalXp} total XP'
+                            : '${xpProgress.totalXp} total XP',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
+                ),
+                const SizedBox(height: 14),
+                if (summary.rewardGranted) ...[
                   _buildRewardCard(
                     title: 'Coins earned',
                     value: '+${summary.coinsEarned}',
@@ -518,9 +532,16 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                 ] else ...[
                   _buildProgressCard(
                     title: 'Current level',
-                    value: '${summary.newLevel}',
+                    value: '${xpProgress.level}',
                     icon: Icons.auto_graph,
                     color: _accentColor,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildProgressCard(
+                    title: 'Rank title',
+                    value: xpProgress.rankTitle,
+                    icon: Icons.workspace_premium,
+                    color: _secondaryAccent,
                   ),
                   const SizedBox(height: 10),
                   _buildProgressCard(

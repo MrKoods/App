@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -7,11 +9,39 @@ import '../models/preset_model.dart';
 import '../models/task_completion_result.dart';
 import '../models/task_model.dart';
 import 'activity_service.dart';
+import 'xp_progression_service.dart';
+
+class RewardRedemptionResult {
+  final bool success;
+  final String message;
+
+  const RewardRedemptionResult._({
+    required this.success,
+    required this.message,
+  });
+
+  const RewardRedemptionResult.success(String message)
+    : this._(success: true, message: message);
+
+  const RewardRedemptionResult.failure(String message)
+    : this._(success: false, message: message);
+}
 
 class FirestoreService {
   static const int _fullChecklistCoinsReward = 10;
-  static const int _fullChecklistXpReward = 25;
-  static const int _xpPerLevel = 100;
+  static const int _fullChecklistXpReward = 50;
+  static const int _sevenDayStreakXpBonus = 100;
+  static const int _thirtyDayStreakXpBonus = 300;
+
+  static const String rewardStreakFreeze = 'streak_freeze';
+  static const String rewardMissedDayPass = 'missed_day_pass';
+  static const String rewardDoubleXpTomorrow = 'double_xp_tomorrow';
+  static const String rewardAutoCompleteTask = 'auto_complete_task';
+  static const String rewardThreeDayShield = 'three_day_shield';
+  static const String rewardDoubleCoinsTomorrow = 'double_coins_tomorrow';
+  static const String rewardPlusOneStreakDay = 'plus_one_streak_day';
+  static const String rewardSkipTodaySafe = 'skip_today_safe';
+  static const String rewardMysteryBox = 'mystery_box';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -24,10 +54,10 @@ class FirestoreService {
   CollectionReference<Map<String, dynamic>> get tasksCollection =>
       _firestore.collection('tasks');
 
-    CollectionReference<Map<String, dynamic>> get historyCollection =>
+  CollectionReference<Map<String, dynamic>> get historyCollection =>
       _firestore.collection('history');
 
-    CollectionReference<Map<String, dynamic>> get presetsCollection =>
+  CollectionReference<Map<String, dynamic>> get presetsCollection =>
       _firestore.collection('presets');
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> getUserStream() {
@@ -49,8 +79,10 @@ class FirestoreService {
           .toList();
 
       tasks.sort((first, second) {
-        final DateTime firstDate = first.date ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final DateTime secondDate = second.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final DateTime firstDate =
+            first.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final DateTime secondDate =
+            second.date ?? DateTime.fromMillisecondsSinceEpoch(0);
         return firstDate.compareTo(secondDate);
       });
 
@@ -79,9 +111,13 @@ class FirestoreService {
     required Map<String, dynamic> userData,
   }) {
     final DateTime now = DateTime.now();
-    final List<Task> todaysTasks = tasks.where((task) => _isSameDay(task.date, now)).toList();
+    final List<Task> todaysTasks = tasks
+        .where((task) => _isSameDay(task.date, now))
+        .toList();
 
-    final int tasksCompletedToday = todaysTasks.where((task) => task.completed).length;
+    final int tasksCompletedToday = todaysTasks
+        .where((task) => task.completed)
+        .length;
     final int totalFocusTimeSeconds = todaysTasks.fold<int>(
       0,
       (acc, task) => acc + task.durationSeconds,
@@ -123,12 +159,15 @@ class FirestoreService {
   }
 
   Future<bool> startTask({required Task task}) async {
-    final QuerySnapshot<Map<String, dynamic>> activeTaskSnapshot = await tasksCollection
-        .where('userId', isEqualTo: uid)
-      .where('status', whereIn: <String>['inProgress', 'paused'])
-        .get();
+    final QuerySnapshot<Map<String, dynamic>> activeTaskSnapshot =
+        await tasksCollection
+            .where('userId', isEqualTo: uid)
+            .where('status', whereIn: <String>['inProgress', 'paused'])
+            .get();
 
-    final bool hasAnotherTaskRunning = activeTaskSnapshot.docs.any((doc) => doc.id != task.id);
+    final bool hasAnotherTaskRunning = activeTaskSnapshot.docs.any(
+      (doc) => doc.id != task.id,
+    );
 
     if (hasAnotherTaskRunning) {
       return false;
@@ -157,12 +196,16 @@ class FirestoreService {
       return task.durationSeconds;
     }
 
-    final Task latestTask = Task.fromFirestore(taskSnapshot.id, taskSnapshot.data()!);
+    final Task latestTask = Task.fromFirestore(
+      taskSnapshot.id,
+      taskSnapshot.data()!,
+    );
     final DateTime now = DateTime.now();
     final DateTime segmentStart = latestTask.startTime ?? now;
     final int segmentSeconds = now.difference(segmentStart).inSeconds;
     final int totalDurationSeconds =
-        (latestTask.durationSeconds + (segmentSeconds < 0 ? 0 : segmentSeconds));
+        (latestTask.durationSeconds +
+        (segmentSeconds < 0 ? 0 : segmentSeconds));
 
     await tasksCollection.doc(task.id).update({
       'status': 'paused',
@@ -186,12 +229,16 @@ class FirestoreService {
       return const TaskCompletionResult(durationSeconds: 0);
     }
 
-    final Task latestTask = Task.fromFirestore(taskSnapshot.id, taskSnapshot.data()!);
+    final Task latestTask = Task.fromFirestore(
+      taskSnapshot.id,
+      taskSnapshot.data()!,
+    );
     final DateTime endTime = DateTime.now();
     final DateTime segmentStart = latestTask.startTime ?? endTime;
     final int segmentSeconds = endTime.difference(segmentStart).inSeconds;
     final int safeSegmentSeconds = segmentSeconds < 0 ? 0 : segmentSeconds;
-    final int safeDurationSeconds = latestTask.durationSeconds + safeSegmentSeconds;
+    final int safeDurationSeconds =
+        latestTask.durationSeconds + safeSegmentSeconds;
 
     await tasksCollection.doc(task.id).update({
       'status': 'completed',
@@ -202,9 +249,7 @@ class FirestoreService {
       'date': (latestTask.date ?? endTime).toIso8601String(),
     });
 
-    await userDoc.update({
-      'coins': FieldValue.increment(1),
-    });
+    await userDoc.update({'coins': FieldValue.increment(1)});
 
     await addHistory(
       '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
@@ -213,11 +258,13 @@ class FirestoreService {
     // Post task completion to activity feed
     await ActivityService().postActivity(
       type: 'task_completed',
-      message: '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
+      message:
+          '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
     );
 
-    final CompletionRewardSummary? rewardSummary =
-        await _updateDailyProgress(referenceDate: latestTask.date ?? endTime);
+    final CompletionRewardSummary? rewardSummary = await _updateDailyProgress(
+      referenceDate: latestTask.date ?? endTime,
+    );
 
     return TaskCompletionResult(
       durationSeconds: safeDurationSeconds,
@@ -225,7 +272,9 @@ class FirestoreService {
     );
   }
 
-  Future<TaskCompletionResult> completeTaskDirectly({required Task task}) async {
+  Future<TaskCompletionResult> completeTaskDirectly({
+    required Task task,
+  }) async {
     final DateTime now = DateTime.now();
 
     await tasksCollection.doc(task.id).update({
@@ -237,13 +286,12 @@ class FirestoreService {
       'date': now.toIso8601String(),
     });
 
-    await userDoc.update({
-      'coins': FieldValue.increment(1),
-    });
+    await userDoc.update({'coins': FieldValue.increment(1)});
 
     await addHistory('${task.taskName} completed in 0 minutes');
-    final CompletionRewardSummary? rewardSummary =
-        await _updateDailyProgress(referenceDate: now);
+    final CompletionRewardSummary? rewardSummary = await _updateDailyProgress(
+      referenceDate: now,
+    );
 
     return TaskCompletionResult(
       durationSeconds: 0,
@@ -297,9 +345,352 @@ class FirestoreService {
   }
 
   Future<void> updateCoins(int newCoins) async {
-    await userDoc.update({
-      'coins': newCoins,
+    await userDoc.update({'coins': newCoins});
+  }
+
+  Future<RewardRedemptionResult> redeemReward({
+    required String rewardId,
+  }) async {
+    final _RewardConfig? config = _rewardConfigForId(rewardId);
+    if (config == null) {
+      return const RewardRedemptionResult.failure('Unknown reward.');
+    }
+
+    final _MysteryOutcome? mysteryOutcome = rewardId == rewardMysteryBox
+        ? _rollMysteryOutcome()
+        : null;
+
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final DocumentSnapshot<Map<String, dynamic>> userSnapshot =
+            await transaction.get(userDoc);
+        final Map<String, dynamic> userData =
+            userSnapshot.data() ?? <String, dynamic>{};
+
+        final int currentCoins = _readInt(userData['coins']);
+        if (currentCoins < config.cost) {
+          throw StateError('insufficient_coins');
+        }
+
+        int newCoins = currentCoins - config.cost;
+        int newXp = _readInt(userData['xp']);
+        int newLevel = _readInt(userData['level']) <= 0
+            ? 1
+            : _readInt(userData['level']);
+        int currentStreak = _readInt(userData['currentStreak']);
+        int longestStreak = _readInt(userData['longestStreak']);
+        int streakFreezeCount = _readInt(userData['streakFreezeCount']);
+        int missedDayPassCount = _readInt(userData['missedDayPassCount']);
+        int autoCompleteTaskTokens = _readInt(
+          userData['autoCompleteTaskTokens'],
+        );
+        int streakShieldDays = _readInt(userData['streakShieldDays']);
+        bool doubleXpTomorrow = userData['doubleXpTomorrow'] == true;
+        bool doubleCoinsTomorrow = userData['doubleCoinsTomorrow'] == true;
+        int skipTodayTokens = _readInt(userData['skipTodayTokens']);
+
+        switch (rewardId) {
+          case rewardStreakFreeze:
+            streakFreezeCount += 1;
+            break;
+          case rewardMissedDayPass:
+            missedDayPassCount += 1;
+            break;
+          case rewardDoubleXpTomorrow:
+            doubleXpTomorrow = true;
+            break;
+          case rewardAutoCompleteTask:
+            autoCompleteTaskTokens += 1;
+            break;
+          case rewardThreeDayShield:
+            streakShieldDays += 3;
+            break;
+          case rewardDoubleCoinsTomorrow:
+            doubleCoinsTomorrow = true;
+            break;
+          case rewardPlusOneStreakDay:
+            currentStreak += 1;
+            if (currentStreak > longestStreak) {
+              longestStreak = currentStreak;
+            }
+            break;
+          case rewardSkipTodaySafe:
+            skipTodayTokens += 1;
+            break;
+          case rewardMysteryBox:
+            if (mysteryOutcome == null) {
+              throw StateError('mystery_roll_failed');
+            }
+
+            newCoins += mysteryOutcome.bonusCoins;
+            newXp += mysteryOutcome.bonusXp;
+
+            if (mysteryOutcome.grantsStreakFreeze) {
+              streakFreezeCount += 1;
+            }
+            if (mysteryOutcome.grantsAutoCompleteToken) {
+              autoCompleteTaskTokens += 1;
+            }
+            if (mysteryOutcome.grantsDoubleXpTomorrow) {
+              doubleXpTomorrow = true;
+            }
+            if (mysteryOutcome.grantsDoubleCoinsTomorrow) {
+              doubleCoinsTomorrow = true;
+            }
+
+            final int recalculatedLevel = XpProgressionService.levelFromXp(
+              newXp,
+            );
+            if (recalculatedLevel > newLevel) {
+              newLevel = recalculatedLevel;
+            }
+            break;
+        }
+
+        transaction.update(userDoc, {
+          'coins': newCoins,
+          'xp': newXp,
+          'level': newLevel,
+          'currentStreak': currentStreak,
+          'longestStreak': longestStreak,
+          'streakFreezeCount': streakFreezeCount,
+          'missedDayPassCount': missedDayPassCount,
+          'autoCompleteTaskTokens': autoCompleteTaskTokens,
+          'streakShieldDays': streakShieldDays,
+          'doubleXpTomorrow': doubleXpTomorrow,
+          'doubleCoinsTomorrow': doubleCoinsTomorrow,
+          'skipTodayTokens': skipTodayTokens,
+        });
+
+        final String historyMessage =
+            rewardId == rewardMysteryBox && mysteryOutcome != null
+            ? 'Redeemed ${config.name} (-${config.cost} coins) • ${mysteryOutcome.label}'
+            : 'Redeemed ${config.name} (-${config.cost} coins)';
+
+        transaction.set(historyCollection.doc(), {
+          'userId': uid,
+          'message': historyMessage,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(_firestore.collection('activity_feed').doc(), {
+          'userId': uid,
+          'userEmail': _auth.currentUser?.email ?? '',
+          'type': 'reward_redeemed',
+          'message': rewardId == rewardMysteryBox && mysteryOutcome != null
+              ? 'Redeemed ${config.name}: ${mysteryOutcome.label}'
+              : 'Redeemed reward: ${config.name}',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      });
+    } on StateError catch (error) {
+      if (error.message == 'insufficient_coins') {
+        return const RewardRedemptionResult.failure('Not enough coins');
+      }
+
+      return const RewardRedemptionResult.failure(
+        'Could not redeem reward right now.',
+      );
+    } catch (_) {
+      return const RewardRedemptionResult.failure(
+        'Could not redeem reward right now.',
+      );
+    }
+
+    if (rewardId == rewardMysteryBox && mysteryOutcome != null) {
+      return RewardRedemptionResult.success(
+        'Mystery Box opened: ${mysteryOutcome.label}',
+      );
+    }
+
+    return RewardRedemptionResult.success('${config.name} redeemed!');
+  }
+
+  Future<void> ensureStreakProtectionState({DateTime? now}) async {
+    final DateTime today = DateTime(
+      (now ?? DateTime.now()).year,
+      (now ?? DateTime.now()).month,
+      (now ?? DateTime.now()).day,
+    );
+
+    await _firestore.runTransaction((transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> userSnapshot =
+          await transaction.get(userDoc);
+      final Map<String, dynamic> userData =
+          userSnapshot.data() ?? <String, dynamic>{};
+
+      final DateTime? lastChecklistDate = _readDateTime(
+        userData['lastChecklistDate'],
+      );
+      if (lastChecklistDate == null) {
+        return;
+      }
+
+      final int currentStreak = _readInt(userData['currentStreak']);
+      if (currentStreak <= 0) {
+        return;
+      }
+
+      final int missedDays =
+          _daysBetween(
+            DateTime(
+              lastChecklistDate.year,
+              lastChecklistDate.month,
+              lastChecklistDate.day,
+            ),
+            today,
+          ) -
+          1;
+
+      if (missedDays <= 0) {
+        return;
+      }
+
+      int unresolvedMissedDays = missedDays;
+      int streakShieldDays = _readInt(userData['streakShieldDays']);
+      int streakFreezeCount = _readInt(userData['streakFreezeCount']);
+      int missedDayPassCount = _readInt(userData['missedDayPassCount']);
+      int skipTodayTokens = _readInt(userData['skipTodayTokens']);
+      int nextCurrentStreak = currentStreak;
+
+      final int shieldUsed = unresolvedMissedDays < streakShieldDays
+          ? unresolvedMissedDays
+          : streakShieldDays;
+      unresolvedMissedDays -= shieldUsed;
+      streakShieldDays -= shieldUsed;
+
+      if (unresolvedMissedDays > 0 && skipTodayTokens > 0) {
+        skipTodayTokens -= 1;
+        unresolvedMissedDays -= 1;
+      }
+
+      if (unresolvedMissedDays > 0 && streakFreezeCount > 0) {
+        streakFreezeCount -= 1;
+        unresolvedMissedDays -= 1;
+      }
+
+      if (unresolvedMissedDays > 0 && missedDayPassCount > 0) {
+        missedDayPassCount -= 1;
+        unresolvedMissedDays -= 1;
+      }
+
+      if (unresolvedMissedDays > 0) {
+        nextCurrentStreak = 0;
+      }
+
+      transaction.update(userDoc, {
+        'currentStreak': nextCurrentStreak,
+        'streakShieldDays': streakShieldDays,
+        'streakFreezeCount': streakFreezeCount,
+        'missedDayPassCount': missedDayPassCount,
+        'skipTodayTokens': skipTodayTokens,
+      });
     });
+  }
+
+  Future<bool> useSkipTodayToken() async {
+    bool consumed = false;
+
+    await _firestore.runTransaction((transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> userSnapshot =
+          await transaction.get(userDoc);
+      final Map<String, dynamic> userData =
+          userSnapshot.data() ?? <String, dynamic>{};
+
+      final int tokens = _readInt(userData['skipTodayTokens']);
+      if (tokens <= 0) {
+        return;
+      }
+
+      final DateTime today = DateTime.now();
+
+      transaction.update(userDoc, {
+        'skipTodayTokens': tokens - 1,
+        'lastChecklistDate': today.toIso8601String(),
+        'checklistCompletedToday': true,
+        'rewardGivenToday': true,
+      });
+
+      transaction.set(historyCollection.doc(), {
+        'userId': uid,
+        'message': 'Used Skip Today token to keep streak safe',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      consumed = true;
+    });
+
+    return consumed;
+  }
+
+  Future<TaskCompletionResult> autoCompleteTaskWithToken({
+    required Task task,
+  }) async {
+    final DateTime now = DateTime.now();
+    bool tokenConsumed = false;
+
+    await _firestore.runTransaction((transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> userSnapshot =
+          await transaction.get(userDoc);
+      final DocumentSnapshot<Map<String, dynamic>> taskSnapshot =
+          await transaction.get(tasksCollection.doc(task.id));
+
+      if (!taskSnapshot.exists) {
+        throw StateError('task_not_found');
+      }
+
+      final Map<String, dynamic> userData =
+          userSnapshot.data() ?? <String, dynamic>{};
+      final int availableTokens = _readInt(userData['autoCompleteTaskTokens']);
+      if (availableTokens <= 0) {
+        throw StateError('token_not_available');
+      }
+
+      final Task latestTask = Task.fromFirestore(
+        taskSnapshot.id,
+        taskSnapshot.data()!,
+      );
+      if (latestTask.completed) {
+        throw StateError('already_completed');
+      }
+
+      final int currentCoins = _readInt(userData['coins']);
+      transaction.update(userDoc, {
+        'autoCompleteTaskTokens': availableTokens - 1,
+        'coins': currentCoins + 1,
+      });
+
+      transaction.update(tasksCollection.doc(task.id), {
+        'status': 'completed',
+        'startTime': now,
+        'endTime': now,
+        'durationSeconds': latestTask.durationSeconds,
+        'completed': true,
+        'date': now.toIso8601String(),
+      });
+
+      transaction.set(historyCollection.doc(), {
+        'userId': uid,
+        'message':
+            '${latestTask.taskName} auto-completed using token (+1 coin)',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      tokenConsumed = true;
+    });
+
+    if (!tokenConsumed) {
+      return const TaskCompletionResult(durationSeconds: 0);
+    }
+
+    final CompletionRewardSummary? rewardSummary = await _updateDailyProgress(
+      referenceDate: now,
+    );
+
+    return TaskCompletionResult(
+      durationSeconds: task.durationSeconds,
+      rewardSummary: rewardSummary,
+    );
   }
 
   Future<void> updateStreaks({
@@ -343,10 +734,17 @@ class FirestoreService {
   Future<CompletionRewardSummary?> applyDailyChecklistCompletionReward({
     required DateTime referenceDate,
   }) async {
-    final DocumentSnapshot<Map<String, dynamic>> userSnapshot = await userDoc.get();
-    final Map<String, dynamic> userData = userSnapshot.data() ?? <String, dynamic>{};
-    final DateTime? lastChecklistDate = _readDateTime(userData['lastChecklistDate']);
-    final bool alreadyRewardedToday = _isSameDay(lastChecklistDate, referenceDate);
+    final DocumentSnapshot<Map<String, dynamic>> userSnapshot = await userDoc
+        .get();
+    final Map<String, dynamic> userData =
+        userSnapshot.data() ?? <String, dynamic>{};
+    final DateTime? lastChecklistDate = _readDateTime(
+      userData['lastChecklistDate'],
+    );
+    final bool alreadyRewardedToday = _isSameDay(
+      lastChecklistDate,
+      referenceDate,
+    );
 
     final QuerySnapshot<Map<String, dynamic>> taskSnapshot =
         await tasksCollection.where('userId', isEqualTo: uid).get();
@@ -357,17 +755,8 @@ class FirestoreService {
         .toList();
 
     final bool allCompleted =
-        todaysTasks.isNotEmpty && todaysTasks.every((currentTask) => currentTask.completed);
-
-    await userDoc.update({
-      'checklistCompletedToday': allCompleted,
-      'rewardGivenToday': alreadyRewardedToday,
-      'xp': _readInt(userData['xp']),
-      'level': _readInt(userData['level']) <= 0 ? 1 : _readInt(userData['level']),
-      'totalCompletedDays': _readInt(userData['totalCompletedDays']),
-      'unlockedBadges': _readStringList(userData['unlockedBadges']),
-      'unlockedTitles': _readStringList(userData['unlockedTitles']),
-    });
+        todaysTasks.isNotEmpty &&
+        todaysTasks.every((currentTask) => currentTask.completed);
 
     if (!allCompleted) {
       return null;
@@ -380,7 +769,9 @@ class FirestoreService {
     );
 
     final int currentXp = _readInt(userData['xp']);
-    final int currentLevel = _readInt(userData['level']) <= 0 ? 1 : _readInt(userData['level']);
+    final int currentLevel = _readInt(userData['level']) <= 0
+        ? 1
+        : _readInt(userData['level']);
 
     if (alreadyRewardedToday) {
       return CompletionRewardSummary(
@@ -398,7 +789,8 @@ class FirestoreService {
         unlockedBadges: const <String>[],
         unlockedTitles: const <String>[],
         completionDate: normalizedDate,
-        message: 'You already claimed today\'s rewards. Come back tomorrow for more XP and coins.',
+        message:
+            'You already claimed today\'s rewards. Come back tomorrow for more XP and coins.',
       );
     }
 
@@ -406,18 +798,23 @@ class FirestoreService {
     int currentStreak = 1;
     int longestStreak = _readInt(userData['longestStreak']);
     int perfectDays = _readInt(userData['perfectDays']) + 1;
+    final bool hasDoubleXpTomorrow = userData['doubleXpTomorrow'] == true;
+    final bool hasDoubleCoinsTomorrow = userData['doubleCoinsTomorrow'] == true;
     int totalCompletedDays = _readInt(userData['totalCompletedDays']) + 1;
     final int oldXp = currentXp;
     final int oldLevel = currentLevel;
-    final int newXp = oldXp + _fullChecklistXpReward;
-    final int newLevel = _levelFromXp(newXp);
-    final bool didLevelUp = newLevel > oldLevel;
-    final List<String> currentBadges = _readStringList(userData['unlockedBadges']);
-    final List<String> currentTitles = _readStringList(userData['unlockedTitles']);
+    final List<String> currentBadges = _readStringList(
+      userData['unlockedBadges'],
+    );
+    final List<String> currentTitles = _readStringList(
+      userData['unlockedTitles'],
+    );
     final List<String> unlockedBadges = <String>[];
     final List<String> unlockedTitles = <String>[];
 
-    int bonusCoins = _fullChecklistCoinsReward;
+    int bonusCoins = hasDoubleCoinsTomorrow
+        ? _fullChecklistCoinsReward * 2
+        : _fullChecklistCoinsReward;
 
     final DateTime previousDay = DateTime(
       referenceDate.year,
@@ -433,7 +830,25 @@ class FirestoreService {
       longestStreak = currentStreak;
     }
 
-    await addHistory('Daily checklist completed +$_fullChecklistCoinsReward coins');
+    int rawXpReward = _fullChecklistXpReward;
+    if (currentStreak == 7) {
+      rawXpReward += _sevenDayStreakXpBonus;
+      await addHistory('7-day streak XP bonus +$_sevenDayStreakXpBonus XP');
+    }
+
+    if (currentStreak == 30) {
+      rawXpReward += _thirtyDayStreakXpBonus;
+      await addHistory('30-day streak XP bonus +$_thirtyDayStreakXpBonus XP');
+    }
+
+    final int xpReward = hasDoubleXpTomorrow ? rawXpReward * 2 : rawXpReward;
+    final int newXp = oldXp + xpReward;
+    final int newLevel = XpProgressionService.levelFromXp(newXp);
+    final bool didLevelUp = newLevel > oldLevel;
+
+    await addHistory(
+      'Daily checklist completed +$_fullChecklistCoinsReward coins',
+    );
 
     // Post daily checklist completion to activity feed
     await ActivityService().postActivity(
@@ -459,8 +874,10 @@ class FirestoreService {
       );
     }
 
-    final bool unlockedPerfect3 = perfectDays >= 3 && !currentBadges.contains('Perfect 3');
-    final bool unlockedPerfect7 = perfectDays >= 7 && !currentBadges.contains('Perfect 7');
+    final bool unlockedPerfect3 =
+        perfectDays >= 3 && !currentBadges.contains('Perfect 3');
+    final bool unlockedPerfect7 =
+        perfectDays >= 7 && !currentBadges.contains('Perfect 7');
     final bool unlockedStreak3Title =
         currentStreak >= 3 && !currentTitles.contains('Consistent');
 
@@ -499,8 +916,22 @@ class FirestoreService {
       unlockedTitles: currentTitles,
     );
 
+    if (hasDoubleXpTomorrow || hasDoubleCoinsTomorrow) {
+      await userDoc.update({
+        if (hasDoubleXpTomorrow) 'doubleXpTomorrow': false,
+        if (hasDoubleCoinsTomorrow) 'doubleCoinsTomorrow': false,
+      });
+
+      await addHistory(
+        'Boost consumed: '
+        '${hasDoubleXpTomorrow ? 'Double XP' : ''}'
+        '${hasDoubleXpTomorrow && hasDoubleCoinsTomorrow ? ' + ' : ''}'
+        '${hasDoubleCoinsTomorrow ? 'Double Coins' : ''}',
+      );
+    }
+
     await addHistory(
-      'Full checklist reward +$bonusCoins coins +$_fullChecklistXpReward XP (Level $oldLevel -> $newLevel)',
+      'Full checklist reward +$bonusCoins coins +$xpReward XP (Level $oldLevel -> $newLevel)',
     );
 
     if (didLevelUp) {
@@ -514,7 +945,7 @@ class FirestoreService {
       rewardGranted: true,
       wasAlreadyClaimedToday: false,
       coinsEarned: bonusCoins,
-      xpEarned: _fullChecklistXpReward,
+      xpEarned: xpReward,
       oldXp: oldXp,
       newXp: newXp,
       oldLevel: oldLevel,
@@ -527,6 +958,8 @@ class FirestoreService {
       completionDate: normalizedDate,
       message: didLevelUp
           ? 'Level Up! You reached Level $newLevel.'
+          : hasDoubleXpTomorrow || hasDoubleCoinsTomorrow
+          ? 'Rewards claimed with boost bonuses.'
           : 'Rewards claimed for today. Nice work showing up.',
     );
   }
@@ -535,6 +968,109 @@ class FirestoreService {
     required DateTime referenceDate,
   }) {
     return applyDailyChecklistCompletionReward(referenceDate: referenceDate);
+  }
+
+  _RewardConfig? _rewardConfigForId(String rewardId) {
+    switch (rewardId) {
+      case rewardStreakFreeze:
+        return const _RewardConfig(
+          id: rewardStreakFreeze,
+          name: 'Streak Freeze',
+          cost: 40,
+        );
+      case rewardMissedDayPass:
+        return const _RewardConfig(
+          id: rewardMissedDayPass,
+          name: 'Missed Day Pass',
+          cost: 60,
+        );
+      case rewardDoubleXpTomorrow:
+        return const _RewardConfig(
+          id: rewardDoubleXpTomorrow,
+          name: 'Double XP Tomorrow',
+          cost: 50,
+        );
+      case rewardAutoCompleteTask:
+        return const _RewardConfig(
+          id: rewardAutoCompleteTask,
+          name: 'Auto Complete Task',
+          cost: 30,
+        );
+      case rewardThreeDayShield:
+        return const _RewardConfig(
+          id: rewardThreeDayShield,
+          name: '3-Day Streak Shield',
+          cost: 100,
+        );
+      case rewardDoubleCoinsTomorrow:
+        return const _RewardConfig(
+          id: rewardDoubleCoinsTomorrow,
+          name: 'Double Coins Tomorrow',
+          cost: 50,
+        );
+      case rewardPlusOneStreakDay:
+        return const _RewardConfig(
+          id: rewardPlusOneStreakDay,
+          name: '+1 Streak Day',
+          cost: 70,
+        );
+      case rewardSkipTodaySafe:
+        return const _RewardConfig(
+          id: rewardSkipTodaySafe,
+          name: 'Skip Today (Streak Safe)',
+          cost: 80,
+        );
+      case rewardMysteryBox:
+        return const _RewardConfig(
+          id: rewardMysteryBox,
+          name: 'Mystery Box',
+          cost: 50,
+        );
+      default:
+        return null;
+    }
+  }
+
+  _MysteryOutcome _rollMysteryOutcome() {
+    final List<_MysteryOutcome> outcomes = <_MysteryOutcome>[
+      const _MysteryOutcome(label: '+25 XP', bonusXp: 25),
+      const _MysteryOutcome(label: '+10 coins', bonusCoins: 10),
+      const _MysteryOutcome(label: '1 Streak Freeze', grantsStreakFreeze: true),
+      const _MysteryOutcome(
+        label: '1 Auto Complete Task token',
+        grantsAutoCompleteToken: true,
+      ),
+      const _MysteryOutcome(
+        label: 'Double XP Tomorrow',
+        grantsDoubleXpTomorrow: true,
+      ),
+      const _MysteryOutcome(
+        label: 'Double Coins Tomorrow',
+        grantsDoubleCoinsTomorrow: true,
+      ),
+    ];
+
+    Random random;
+    try {
+      random = Random.secure();
+    } catch (_) {
+      random = Random();
+    }
+    return outcomes[random.nextInt(outcomes.length)];
+  }
+
+  int _daysBetween(DateTime earlier, DateTime later) {
+    final DateTime normalizedEarlier = DateTime(
+      earlier.year,
+      earlier.month,
+      earlier.day,
+    );
+    final DateTime normalizedLater = DateTime(
+      later.year,
+      later.month,
+      later.day,
+    );
+    return normalizedLater.difference(normalizedEarlier).inDays;
   }
 
   int _coinsFromHistory(String message) {
@@ -566,12 +1102,16 @@ class FirestoreService {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  int _levelFromXp(int xpValue) {
-    if (xpValue <= 0) {
-      return 1;
-    }
+  XpProgressSnapshot getXpProgressFromUserData(Map<String, dynamic> userData) {
+    return XpProgressionService.fromXp(_readInt(userData['xp']));
+  }
 
-    return (xpValue ~/ _xpPerLevel) + 1;
+  Future<XpProgressSnapshot> getCurrentUserXpProgress() async {
+    final DocumentSnapshot<Map<String, dynamic>> userSnapshot = await userDoc
+        .get();
+    final Map<String, dynamic> userData =
+        userSnapshot.data() ?? <String, dynamic>{};
+    return getXpProgressFromUserData(userData);
   }
 
   List<String> _readStringList(dynamic value) {
@@ -623,10 +1163,9 @@ class FirestoreService {
   // ─── Presets ───────────────────────────────────────────────────────────────
 
   Stream<List<TaskPreset>> watchPresets() {
-    return presetsCollection
-        .where('userId', isEqualTo: uid)
-        .snapshots()
-        .map((snapshot) {
+    return presetsCollection.where('userId', isEqualTo: uid).snapshots().map((
+      snapshot,
+    ) {
       final List<TaskPreset> presets = snapshot.docs
           .map((doc) => TaskPreset.fromFirestore(doc.id, doc.data()))
           .toList();
@@ -638,7 +1177,8 @@ class FirestoreService {
   /// Save multiple tasks for a specific date.
   /// Used when user adds multiple tasks at once with a selected date.
   Future<void> addMultipleTasks({
-    required List<dynamic> taskInputs, // List of TaskInput objects from add_task_screen.dart
+    required List<dynamic>
+    taskInputs, // List of TaskInput objects from add_task_screen.dart
     required DateTime selectedDate,
   }) async {
     final WriteBatch batch = _firestore.batch();
@@ -681,7 +1221,8 @@ class FirestoreService {
   /// Used when user wants to save tasks as a reusable preset without adding them to the daily checklist.
   Future<void> savePreset({
     required String name,
-    required List<dynamic> taskInputs, // List of TaskInput objects from add_task_screen.dart
+    required List<dynamic>
+    taskInputs, // List of TaskInput objects from add_task_screen.dart
     String dayAssignment = 'Any',
   }) async {
     // Convert TaskInput objects to task templates
@@ -809,8 +1350,9 @@ class FirestoreService {
     const int batchSize = 400;
 
     for (int start = 0; start < taskSnapshot.docs.length; start += batchSize) {
-      final int end =
-          (start + batchSize) > taskSnapshot.docs.length ? taskSnapshot.docs.length : (start + batchSize);
+      final int end = (start + batchSize) > taskSnapshot.docs.length
+          ? taskSnapshot.docs.length
+          : (start + batchSize);
       final List<QueryDocumentSnapshot<Map<String, dynamic>>> chunk =
           taskSnapshot.docs.sublist(start, end);
 
@@ -834,7 +1376,9 @@ class FirestoreService {
     final WriteBatch batch = _firestore.batch();
     final List<TaskTemplate> orderedTemplates = [...preset.tasks]
       ..sort((a, b) => a.sequence.compareTo(b.sequence));
-    final int baseSortOrder = wipeFirst ? 0 : DateTime.now().microsecondsSinceEpoch;
+    final int baseSortOrder = wipeFirst
+        ? 0
+        : DateTime.now().microsecondsSinceEpoch;
 
     if (wipeFirst) {
       final QuerySnapshot<Map<String, dynamic>> existingTasks =
@@ -876,4 +1420,36 @@ class FirestoreService {
 
     await batch.commit();
   }
+}
+
+class _RewardConfig {
+  final String id;
+  final String name;
+  final int cost;
+
+  const _RewardConfig({
+    required this.id,
+    required this.name,
+    required this.cost,
+  });
+}
+
+class _MysteryOutcome {
+  final String label;
+  final int bonusXp;
+  final int bonusCoins;
+  final bool grantsStreakFreeze;
+  final bool grantsAutoCompleteToken;
+  final bool grantsDoubleXpTomorrow;
+  final bool grantsDoubleCoinsTomorrow;
+
+  const _MysteryOutcome({
+    required this.label,
+    this.bonusXp = 0,
+    this.bonusCoins = 0,
+    this.grantsStreakFreeze = false,
+    this.grantsAutoCompleteToken = false,
+    this.grantsDoubleXpTomorrow = false,
+    this.grantsDoubleCoinsTomorrow = false,
+  });
 }

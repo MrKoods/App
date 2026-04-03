@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/completion_reward_summary.dart';
 import '../models/focus_preset_model.dart';
 import '../models/preset_model.dart';
+import '../models/task_completion_result.dart';
 import '../models/task_model.dart';
 import '../services/firestore_service.dart';
 import '../services/focus_lock_service.dart';
@@ -16,11 +17,7 @@ class ListScreen extends StatefulWidget {
   final List<Task> tasks;
   final ValueChanged<int>? onNavigateTab;
 
-  const ListScreen({
-    super.key,
-    required this.tasks,
-    this.onNavigateTab,
-  });
+  const ListScreen({super.key, required this.tasks, this.onNavigateTab});
 
   @override
   State<ListScreen> createState() => _ListScreenState();
@@ -40,14 +37,25 @@ class _ListScreenState extends State<ListScreen> {
   static const Color _secondaryAccent = Color(0xFFFFC857);
 
   static const List<String> _dayOptions = [
-    'Any', 'Monday', 'Tuesday', 'Wednesday',
-    'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'Any',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
 
   String get _todayName {
     const List<String> days = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
     ];
     return days[DateTime.now().weekday - 1];
   }
@@ -71,8 +79,9 @@ class _ListScreenState extends State<ListScreen> {
   }
 
   void _syncTimer(List<Task> tasks) {
-    final bool hasRunningTask =
-      tasks.any((task) => task.isInProgress && task.startTime != null);
+    final bool hasRunningTask = tasks.any(
+      (task) => task.isInProgress && task.startTime != null,
+    );
 
     if (hasRunningTask && _timer == null) {
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -131,7 +140,11 @@ class _ListScreenState extends State<ListScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${task.taskName} ${resumingPausedTask ? 'resumed' : 'started'}')),
+      SnackBar(
+        content: Text(
+          '${task.taskName} ${resumingPausedTask ? 'resumed' : 'started'}',
+        ),
+      ),
     );
   }
 
@@ -142,7 +155,9 @@ class _ListScreenState extends State<ListScreen> {
     final int durationSeconds = result.durationSeconds;
     final int minutes = (durationSeconds / 60).ceil();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${task.taskName} completed in $minutes min. +1 coin')),
+      SnackBar(
+        content: Text('${task.taskName} completed in $minutes min. +1 coin'),
+      ),
     );
 
     await _openCompletionScreenIfNeeded(result.rewardSummary);
@@ -156,8 +171,9 @@ class _ListScreenState extends State<ListScreen> {
       return;
     }
 
-    final bool anotherTaskRunning =
-        tasks.any((t) => t.id != task.id && t.isActive);
+    final bool anotherTaskRunning = tasks.any(
+      (t) => t.id != task.id && t.isActive,
+    );
 
     if (anotherTaskRunning) {
       if (!mounted) return;
@@ -176,7 +192,55 @@ class _ListScreenState extends State<ListScreen> {
     await _openCompletionScreenIfNeeded(result.rewardSummary);
   }
 
-  Future<void> _openCompletionScreenIfNeeded(CompletionRewardSummary? summary) async {
+  Future<void> _handleAutoCompleteToken(
+    Task task,
+    List<Task> tasks,
+    int tokens,
+  ) async {
+    if (task.completed) {
+      return;
+    }
+
+    if (tokens <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No auto-complete tokens available.')),
+      );
+      return;
+    }
+
+    final bool anotherTaskRunning = tasks.any(
+      (t) => t.id != task.id && t.isActive,
+    );
+    if (anotherTaskRunning) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Finish your current task first.')),
+      );
+      return;
+    }
+
+    try {
+      final TaskCompletionResult result = await _firestoreService
+          .autoCompleteTaskWithToken(task: task);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${task.taskName} auto-completed using token.')),
+      );
+
+      await _openCompletionScreenIfNeeded(result.rewardSummary);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not use auto-complete token.')),
+      );
+    }
+  }
+
+  Future<void> _openCompletionScreenIfNeeded(
+    CompletionRewardSummary? summary,
+  ) async {
     if (summary == null || _isOpeningCompletionScreen || !mounted) {
       return;
     }
@@ -201,9 +265,9 @@ class _ListScreenState extends State<ListScreen> {
   Future<void> _handleResetTask(Task task) async {
     await _firestoreService.resetTask(task: task);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${task.taskName} reset')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${task.taskName} reset')));
   }
 
   int _orderValue(Task task) => task.sortOrder ?? (1 << 30);
@@ -276,8 +340,7 @@ class _ListScreenState extends State<ListScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _surfaceColor,
-        title: const Text('Delete Task',
-            style: TextStyle(color: Colors.white)),
+        title: const Text('Delete Task', style: TextStyle(color: Colors.white)),
         content: Text(
           'Delete "${task.taskName}"? This cannot be undone.',
           style: const TextStyle(color: Colors.white70),
@@ -285,13 +348,17 @@ class _ListScreenState extends State<ListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white54)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete',
-                style: TextStyle(color: Colors.redAccent)),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
         ],
       ),
@@ -302,9 +369,9 @@ class _ListScreenState extends State<ListScreen> {
     await _firestoreService.deleteTask(task.id);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"${task.taskName}" deleted')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('"${task.taskName}" deleted')));
   }
 
   Future<void> _openFocusModePicker(Task task) async {
@@ -345,20 +412,22 @@ class _ListScreenState extends State<ListScreen> {
                       },
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
-                        children: FocusLibrary.presets.map(
-                          (preset) => RadioListTile<String>(
-                            value: preset.id,
-                            activeColor: _accentColor,
-                            title: Text(
-                              preset.title,
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              preset.suggestedSoundLabel,
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                          ),
-                        ).toList(),
+                        children: FocusLibrary.presets
+                            .map(
+                              (preset) => RadioListTile<String>(
+                                value: preset.id,
+                                activeColor: _accentColor,
+                                title: Text(
+                                  preset.title,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                subtitle: Text(
+                                  preset.suggestedSoundLabel,
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
+                              ),
+                            )
+                            .toList(),
                       ),
                     ),
                     ListTile(
@@ -383,7 +452,8 @@ class _ListScreenState extends State<ListScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => Navigator.pop(sheetContext, selectedModeId),
+                        onPressed: () =>
+                            Navigator.pop(sheetContext, selectedModeId),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _accentColor,
                           foregroundColor: Colors.black,
@@ -415,9 +485,9 @@ class _ListScreenState extends State<ListScreen> {
         : 'Focus set to ${_focusModeLabel(task.copyWith(focusModeId: nextFocusModeId))}';
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _confirmAndClearList() async {
@@ -432,10 +502,7 @@ class _ListScreenState extends State<ListScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _surfaceColor,
-        title: const Text(
-          'Clear List',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Clear List', style: TextStyle(color: Colors.white)),
         content: const Text(
           'Are you sure you want to delete all tasks from this list?',
           style: TextStyle(color: Colors.white70),
@@ -443,11 +510,17 @@ class _ListScreenState extends State<ListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Clear', style: TextStyle(color: Colors.redAccent)),
+            child: const Text(
+              'Clear',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
         ],
       ),
@@ -456,16 +529,19 @@ class _ListScreenState extends State<ListScreen> {
     if (confirmed != true) return;
 
     try {
-      final int deletedCount = await _firestoreService.clearAllTasksForCurrentUser();
+      final int deletedCount = await _firestoreService
+          .clearAllTasksForCurrentUser();
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cleared $deletedCount task(s).')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cleared $deletedCount task(s).')));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to clear list. Please try again.')),
+        const SnackBar(
+          content: Text('Failed to clear list. Please try again.'),
+        ),
       );
     }
   }
@@ -494,8 +570,10 @@ class _ListScreenState extends State<ListScreen> {
 
             return AlertDialog(
               backgroundColor: _surfaceColor,
-              title: const Text('Save as Preset',
-                  style: TextStyle(color: Colors.white)),
+              title: const Text(
+                'Save as Preset',
+                style: TextStyle(color: Colors.white),
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -549,16 +627,20 @@ class _ListScreenState extends State<ListScreen> {
                         labelText: 'Preset name',
                         labelStyle: TextStyle(color: Colors.white70),
                         enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.white30)),
+                          borderSide: BorderSide(color: Colors.white30),
+                        ),
                         focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: _accentColor)),
+                          borderSide: BorderSide(color: _accentColor),
+                        ),
                       ),
                     ),
                   ],
                   const SizedBox(height: 20),
                   if (!replaceExisting) ...[
-                    const Text('Assign to day',
-                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    const Text(
+                      'Assign to day',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
                     const SizedBox(height: 8),
                     DropdownButton<String>(
                       value: selectedDay,
@@ -567,7 +649,9 @@ class _ListScreenState extends State<ListScreen> {
                       isExpanded: true,
                       underline: Container(height: 1, color: Colors.white30),
                       items: _dayOptions
-                          .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                          .map(
+                            (d) => DropdownMenuItem(value: d, child: Text(d)),
+                          )
                           .toList(),
                       onChanged: (v) {
                         if (v != null) setDialogState(() => selectedDay = v);
@@ -578,24 +662,32 @@ class _ListScreenState extends State<ListScreen> {
                       selectedPreset == null
                           ? 'Choose a preset to replace.'
                           : 'This will overwrite the saved tasks in "${selectedPreset.name}".',
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 12),
-                  Text('${widget.tasks.length} task(s) will be saved',
-                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text(
+                    '${widget.tasks.length} task(s) will be saved',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
                 ],
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel',
-                      style: TextStyle(color: Colors.white54)),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.white54),
+                  ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: _accentColor,
-                      foregroundColor: Colors.black),
+                    backgroundColor: _accentColor,
+                    foregroundColor: Colors.black,
+                  ),
                   onPressed: () async {
                     if (replaceExisting) {
                       if (selectedPreset == null) {
@@ -632,7 +724,8 @@ class _ListScreenState extends State<ListScreen> {
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('"$name" saved as preset')));
+                        SnackBar(content: Text('"$name" saved as preset')),
+                      );
                     }
                   },
                   child: Text(replaceExisting ? 'Replace' : 'Save'),
@@ -651,7 +744,8 @@ class _ListScreenState extends State<ListScreen> {
       context: context,
       backgroundColor: _surfaceColor,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (sheetContext) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
@@ -659,51 +753,82 @@ class _ListScreenState extends State<ListScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Expanded(
-                  child: Text(preset.name,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      preset.name,
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold)),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _accentColor.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(999),
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  child: Text(preset.dayAssignment,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _accentColor.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      preset.dayAssignment,
                       style: const TextStyle(
-                          color: _accentColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
-                ),
-              ]),
+                        color: _accentColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 14),
               Text(
-                  '${preset.tasks.length} task(s) will be added to your list:',
-                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                '${preset.tasks.length} task(s) will be added to your list:',
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
               const SizedBox(height: 10),
-              ...preset.tasks.take(8).map((t) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(children: [
-                      const Icon(Icons.circle, size: 6, color: _accentColor),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(t.taskName,
+              ...preset.tasks
+                  .take(8)
+                  .map(
+                    (t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.circle,
+                            size: 6,
+                            color: _accentColor,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              t.taskName,
                               style: const TextStyle(
-                                  color: Colors.white, fontSize: 14))),
-                      Text(t.category,
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 12)),
-                    ]),
-                  )),
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            t.category,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               if (preset.tasks.length > 8)
-                Text('+ ${preset.tasks.length - 8} more...',
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 12)),
+                Text(
+                  '+ ${preset.tasks.length - 8} more...',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
               const SizedBox(height: 20),
               // Share button
               SizedBox(
@@ -713,10 +838,14 @@ class _ListScreenState extends State<ListScreen> {
                   label: const Text('Share with a Friend'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFFFC857),
-                    side: const BorderSide(color: Color(0xFFFFC857), width: 1.2),
+                    side: const BorderSide(
+                      color: Color(0xFFFFC857),
+                      width: 1.2,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   onPressed: () {
                     Navigator.pop(sheetContext);
@@ -738,15 +867,17 @@ class _ListScreenState extends State<ListScreen> {
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   onPressed: () async {
                     Navigator.pop(sheetContext);
                     await _showApplyPresetChoiceDialog(preset);
                   },
-                  child: const Text('Apply Preset',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Apply Preset',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],
@@ -773,7 +904,10 @@ class _ListScreenState extends State<ListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
           OutlinedButton(
             onPressed: () => Navigator.pop(dialogContext, 'add'),
@@ -806,10 +940,7 @@ class _ListScreenState extends State<ListScreen> {
 
     if (choice == null) return;
 
-    await _firestoreService.applyPreset(
-      preset,
-      wipeFirst: choice == 'replace',
-    );
+    await _firestoreService.applyPreset(preset, wipeFirst: choice == 'replace');
 
     if (!mounted) return;
 
@@ -830,27 +961,38 @@ class _ListScreenState extends State<ListScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: _surfaceColor,
-        title: const Text('Delete Preset',
-            style: TextStyle(color: Colors.white)),
-        content: Text('Delete "${preset.name}"? This cannot be undone.',
-            style: const TextStyle(color: Colors.white70)),
+        title: const Text(
+          'Delete Preset',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'Delete "${preset.name}"? This cannot be undone.',
+          style: const TextStyle(color: Colors.white70),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Colors.white54))),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white54),
+            ),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Delete',
-                  style: TextStyle(color: Colors.redAccent))),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
         ],
       ),
     );
     if (confirmed == true) {
       await _firestoreService.deletePreset(preset.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('"${preset.name}" deleted')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('"${preset.name}" deleted')));
       }
     }
   }
@@ -872,26 +1014,32 @@ class _ListScreenState extends State<ListScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(children: [
-            const Icon(Icons.bookmark_rounded, color: _accentColor, size: 18),
-            const SizedBox(width: 8),
-            const Text('Presets',
+          child: Row(
+            children: [
+              const Icon(Icons.bookmark_rounded, color: _accentColor, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Presets',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold)),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: widget.tasks.isEmpty
-                  ? null
-                  : () => _showSavePresetDialog(presets),
-              icon: const Icon(Icons.save_alt, size: 15),
-              label: const Text('Save current list'),
-              style: TextButton.styleFrom(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: widget.tasks.isEmpty
+                    ? null
+                    : () => _showSavePresetDialog(presets),
+                icon: const Icon(Icons.save_alt, size: 15),
+                label: const Text('Save current list'),
+                style: TextButton.styleFrom(
                   foregroundColor: _secondaryAccent,
-                  textStyle: const TextStyle(fontSize: 13)),
-            ),
-          ]),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 6),
         if (presets.isEmpty)
@@ -900,7 +1048,9 @@ class _ListScreenState extends State<ListScreen> {
             child: Text(
               'No presets yet. Add tasks, then tap "Save current list".',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35), fontSize: 13),
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 13,
+              ),
             ),
           )
         else
@@ -921,23 +1071,29 @@ class _ListScreenState extends State<ListScreen> {
                         ? _accentColor.withValues(alpha: 0.15)
                         : _surfaceColor,
                     side: BorderSide(
-                        color: isToday
-                            ? _accentColor.withValues(alpha: 0.55)
-                            : Colors.white.withValues(alpha: 0.12)),
+                      color: isToday
+                          ? _accentColor.withValues(alpha: 0.55)
+                          : Colors.white.withValues(alpha: 0.12),
+                    ),
                     label: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(p.name,
-                            style: TextStyle(
-                                color: isToday ? _accentColor : Colors.white70,
-                                fontWeight: isToday
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                fontSize: 13)),
+                        Text(
+                          p.name,
+                          style: TextStyle(
+                            color: isToday ? _accentColor : Colors.white70,
+                            fontWeight: isToday
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            fontSize: 13,
+                          ),
+                        ),
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: isToday
                                 ? _accentColor.withValues(alpha: 0.25)
@@ -949,9 +1105,10 @@ class _ListScreenState extends State<ListScreen> {
                                 ? 'Any'
                                 : p.dayAssignment.substring(0, 3),
                             style: TextStyle(
-                                color: isToday ? _accentColor : Colors.white54,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600),
+                              color: isToday ? _accentColor : Colors.white54,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -975,99 +1132,140 @@ class _ListScreenState extends State<ListScreen> {
 
     return Container(
       color: _backgroundColor,
-      child: StreamBuilder<List<TaskPreset>>(
-        stream: _firestoreService.watchPresets(),
-        builder: (context, snap) {
-          final List<TaskPreset> presets = snap.data ?? const [];
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(children: [
-                  const Text('My Checklist',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: _confirmAndClearList,
-                    icon: const Icon(Icons.delete_sweep_rounded, size: 16),
-                    label: const Text('Clear List'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      child: StreamBuilder<Map<String, dynamic>?>(
+        stream: _firestoreService.watchUserData(),
+        builder: (context, userSnap) {
+          final Map<String, dynamic> userData =
+              userSnap.data ?? const <String, dynamic>{};
+          final int autoCompleteTaskTokens =
+              (userData['autoCompleteTaskTokens'] as int?) ?? 0;
+
+          return StreamBuilder<List<TaskPreset>>(
+            stream: _firestoreService.watchPresets(),
+            builder: (context, snap) {
+              final List<TaskPreset> presets = snap.data ?? const [];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'My Checklist',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: _confirmAndClearList,
+                          icon: const Icon(
+                            Icons.delete_sweep_rounded,
+                            size: 16,
+                          ),
+                          label: const Text('Clear List'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _todayName,
+                          style: const TextStyle(
+                            color: _accentColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(_todayName,
-                      style: const TextStyle(
-                          color: _accentColor,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600)),
-                ]),
-              ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text(
-                  'Start one task, finish it, then move to the next.',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _buildPresetBar(presets),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Divider(color: Colors.white12, height: 1),
-              ),
-              Expanded(
-                child: sortedTasks.isEmpty
-                    ? const Center(
-                        child: Text('No tasks yet. Tap + to add one.',
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 18)))
-                  : ReorderableListView.builder(
-                    onReorder: _reorderTasks,
-                    buildDefaultDragHandles: false,
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                        itemCount: sortedTasks.length,
-                        itemBuilder: (context, index) {
-                          final Task task = sortedTasks[index];
-                      return Padding(
-                      key: ValueKey(task.id),
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: ReorderableDelayedDragStartListener(
-                        index: index,
-                        child: TaskTile(
-                        task: task,
-                        onReset: task.completed
-                          ? () => _handleResetTask(task)
-                          : null,
-                        onCheckboxChanged: (_) =>
-                          _handleCheckboxChanged(task, widget.tasks),
-                        elapsedDuration: task.isActive
-                          ? _elapsedForTask(task)
-                          : null,
-                        onStart: (task.isNotStarted || task.isPaused)
-                          ? () => _handleStartTask(task)
-                          : null,
-                        onFinish: task.isActive
-                          ? () => _handleFinishTask(task)
-                          : null,
-                        onFocus: task.completed
-                          ? null
-                          : () => _openFocusModePicker(task),
-                        focusModeLabel: _focusModeLabel(task),
-                        onDelete: () => _handleDeleteTask(task),
-                        ),
-                      ),
-                          );
-                        },
-                      ),
-              ),
-            ],
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    child: Text(
+                      'Start one task, finish it, then move to the next.',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildPresetBar(presets),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Divider(color: Colors.white12, height: 1),
+                  ),
+                  Expanded(
+                    child: sortedTasks.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No tasks yet. Tap + to add one.',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 18,
+                              ),
+                            ),
+                          )
+                        : ReorderableListView.builder(
+                            onReorder: _reorderTasks,
+                            buildDefaultDragHandles: false,
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                            itemCount: sortedTasks.length,
+                            itemBuilder: (context, index) {
+                              final Task task = sortedTasks[index];
+                              return Padding(
+                                key: ValueKey(task.id),
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: ReorderableDelayedDragStartListener(
+                                  index: index,
+                                  child: TaskTile(
+                                    task: task,
+                                    onReset: task.completed
+                                        ? () => _handleResetTask(task)
+                                        : null,
+                                    onCheckboxChanged: (_) =>
+                                        _handleCheckboxChanged(
+                                          task,
+                                          widget.tasks,
+                                        ),
+                                    elapsedDuration: task.isActive
+                                        ? _elapsedForTask(task)
+                                        : null,
+                                    onStart:
+                                        (task.isNotStarted || task.isPaused)
+                                        ? () => _handleStartTask(task)
+                                        : null,
+                                    onFinish: task.isActive
+                                        ? () => _handleFinishTask(task)
+                                        : null,
+                                    onFocus: task.completed
+                                        ? null
+                                        : () => _openFocusModePicker(task),
+                                    focusModeLabel: _focusModeLabel(task),
+                                    onDelete: () => _handleDeleteTask(task),
+                                    onAutoCompleteToken:
+                                        (!task.completed && !task.isActive)
+                                        ? () => _handleAutoCompleteToken(
+                                            task,
+                                            widget.tasks,
+                                            autoCompleteTaskTokens,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),

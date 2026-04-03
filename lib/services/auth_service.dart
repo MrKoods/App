@@ -11,11 +11,8 @@ class AuthService {
   // SIGN UP
   Future<String?> signUp(String email, String password) async {
     try {
-      UserCredential userCredential =
-          await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      UserCredential userCredential = await _auth
+          .createUserWithEmailAndPassword(email: email, password: password);
 
       String uid = userCredential.user!.uid;
 
@@ -34,6 +31,13 @@ class AuthService {
         'checklistCompletedToday': false,
         'rewardGivenToday': false,
         'lastChecklistDate': null,
+        'streakFreezeCount': 0,
+        'missedDayPassCount': 0,
+        'autoCompleteTaskTokens': 0,
+        'streakShieldDays': 0,
+        'doubleXpTomorrow': false,
+        'doubleCoinsTomorrow': false,
+        'skipTodayTokens': 0,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -46,10 +50,7 @@ class AuthService {
   // LOGIN
   Future<String?> login(String email, String password) async {
     try {
-      await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
       return null;
     } on FirebaseAuthException catch (e) {
       return e.message;

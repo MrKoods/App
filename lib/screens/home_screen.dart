@@ -17,12 +17,7 @@ class HomeScreen extends StatefulWidget {
   final int? coins;
   final ValueChanged<int>? onNavigateTab;
 
-  const HomeScreen({
-    super.key,
-    this.tasks,
-    this.coins,
-    this.onNavigateTab,
-  });
+  const HomeScreen({super.key, this.tasks, this.coins, this.onNavigateTab});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -50,7 +45,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _syncTimer(List<Task> tasks) {
-    final bool hasRunningTask = tasks.any((task) => task.isInProgress && task.startTime != null);
+    final bool hasRunningTask = tasks.any(
+      (task) => task.isInProgress && task.startTime != null,
+    );
 
     if (hasRunningTask && _timer == null) {
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -79,9 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!started) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Finish your current task first.'),
-        ),
+        const SnackBar(content: Text('Finish your current task first.')),
       );
       return;
     }
@@ -98,11 +93,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${task.taskName} started'),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${task.taskName} started')));
   }
 
   Future<void> _handleFinishTask(Task task) async {
@@ -144,9 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Finish your current task first.'),
-        ),
+        const SnackBar(content: Text('Finish your current task first.')),
       );
       return;
     }
@@ -158,15 +149,73 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${task.taskName} completed. +1 coin'),
-      ),
+      SnackBar(content: Text('${task.taskName} completed. +1 coin')),
     );
 
     await _openCompletionScreenIfNeeded(result.rewardSummary);
   }
 
-  Future<void> _openCompletionScreenIfNeeded(CompletionRewardSummary? summary) async {
+  Future<void> _handleAutoCompleteToken(
+    Task task,
+    List<Task> tasks,
+    int tokens,
+  ) async {
+    if (task.completed) {
+      return;
+    }
+
+    if (tokens <= 0) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No auto-complete tokens available.')),
+      );
+      return;
+    }
+
+    final bool anotherTaskRunning = tasks.any(
+      (currentTask) => currentTask.id != task.id && currentTask.isInProgress,
+    );
+
+    if (anotherTaskRunning) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Finish your current task first.')),
+      );
+      return;
+    }
+
+    try {
+      final result = await _firestoreService.autoCompleteTaskWithToken(
+        task: task,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${task.taskName} auto-completed using token.')),
+      );
+
+      await _openCompletionScreenIfNeeded(result.rewardSummary);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not use auto-complete token.')),
+      );
+    }
+  }
+
+  Future<void> _openCompletionScreenIfNeeded(
+    CompletionRewardSummary? summary,
+  ) async {
     if (summary == null || _isOpeningCompletionScreen || !mounted) {
       return;
     }
@@ -198,11 +247,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${task.taskName} reset'),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${task.taskName} reset')));
   }
 
   int _taskPriority(Task task) {
@@ -289,10 +336,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Text(
         message,
-        style: const TextStyle(
-          color: Colors.white70,
-          fontSize: 15,
-        ),
+        style: const TextStyle(color: Colors.white70, fontSize: 15),
       ),
     );
   }
@@ -318,10 +362,11 @@ class _HomeScreenState extends State<HomeScreen> {
             border: Border.all(color: color.withValues(alpha: 0.28)),
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(height: 10),
+              Icon(icon, color: color, size: 20),
+              const SizedBox(height: 8),
               Text(
                 value,
                 style: const TextStyle(
@@ -329,14 +374,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                 ),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 label,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                ),
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -357,11 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.auto_graph,
-                color: _secondaryAccent,
-                size: 22,
-              ),
+              Icon(Icons.auto_graph, color: _secondaryAccent, size: 22),
               SizedBox(width: 10),
               Text(
                 'User Stats',
@@ -433,11 +479,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return StreamBuilder<Map<String, dynamic>?>(
       stream: _firestoreService.watchUserData(),
       builder: (context, userSnapshot) {
-        final Map<String, dynamic> userData = userSnapshot.data ?? <String, dynamic>{};
-        final int currentCoins = (userData['coins'] as int?) ?? widget.coins ?? 0;
-        final int currentStreak = (userData['currentStreak'] as int?) ?? 0;
-        final int longestStreak = (userData['longestStreak'] as int?) ?? 0;
-        final int perfectDays = (userData['perfectDays'] as int?) ?? 0;
+        final Map<String, dynamic> userData =
+            userSnapshot.data ?? <String, dynamic>{};
+        final int currentCoins =
+            (userData['coins'] as num?)?.toInt() ?? widget.coins ?? 0;
+        final int currentStreak =
+            (userData['currentStreak'] as num?)?.toInt() ?? 0;
+        final int longestStreak =
+            (userData['longestStreak'] as num?)?.toInt() ?? 0;
+        final int perfectDays = (userData['perfectDays'] as num?)?.toInt() ?? 0;
+        final int autoCompleteTaskTokens =
+            (userData['autoCompleteTaskTokens'] as num?)?.toInt() ?? 0;
 
         return StreamBuilder<List<Task>>(
           stream: _firestoreService.watchTasks(),
@@ -445,7 +497,10 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context, taskSnapshot) {
             final List<Task> userTasks = taskSnapshot.data ?? const <Task>[];
             final List<Task> sortedTasks = [...userTasks]
-              ..sort((left, right) => _taskPriority(left).compareTo(_taskPriority(right)));
+              ..sort(
+                (left, right) =>
+                    _taskPriority(left).compareTo(_taskPriority(right)),
+              );
 
             _syncTimer(userTasks);
 
@@ -454,14 +509,18 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (context, historySnapshot) {
                 final List<HistoryEntry> historyItems =
                     historySnapshot.data ?? const <HistoryEntry>[];
-                final Map<String, int> dailySummary = _firestoreService.buildDailySummary(
-                  tasks: userTasks,
-                  historyItems: historyItems,
-                  userData: userData,
-                );
-                final List<HistoryEntry> recentHistory = historyItems.take(6).toList();
-                final int todaysTaskCount =
-                    userTasks.where((task) => _isSameDay(task.date, DateTime.now())).length;
+                final Map<String, int> dailySummary = _firestoreService
+                    .buildDailySummary(
+                      tasks: userTasks,
+                      historyItems: historyItems,
+                      userData: userData,
+                    );
+                final List<HistoryEntry> recentHistory = historyItems
+                    .take(6)
+                    .toList();
+                final int todaysTaskCount = userTasks
+                    .where((task) => _isSameDay(task.date, DateTime.now()))
+                    .length;
 
                 return Container(
                   color: _backgroundColor,
@@ -478,10 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF162033),
-                              Color(0xFF0F1420),
-                            ],
+                            colors: [Color(0xFF162033), Color(0xFF0F1420)],
                           ),
                           border: Border.all(color: Colors.white10),
                         ),
@@ -506,7 +562,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 14),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
                                 color: _accentColor.withValues(alpha: 0.16),
                                 borderRadius: BorderRadius.circular(999),
@@ -531,10 +590,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 20),
                       DailySummaryWidget(
-                        tasksCompletedToday: dailySummary['tasksCompletedToday'] ?? 0,
-                        totalFocusTimeSeconds: dailySummary['totalFocusTimeSeconds'] ?? 0,
+                        tasksCompletedToday:
+                            dailySummary['tasksCompletedToday'] ?? 0,
+                        totalFocusTimeSeconds:
+                            dailySummary['totalFocusTimeSeconds'] ?? 0,
                         coinsEarnedToday: dailySummary['coinsEarnedToday'] ?? 0,
-                        currentStreak: dailySummary['currentStreak'] ?? currentStreak,
+                        currentStreak:
+                            dailySummary['currentStreak'] ?? currentStreak,
                       ),
                       const SizedBox(height: 24),
                       _buildSectionTitle('Tasks'),
@@ -545,11 +607,28 @@ class _HomeScreenState extends State<HomeScreen> {
                         ...sortedTasks.map(
                           (task) => TaskTile(
                             task: task,
-                            onReset: task.completed ? () => _handleResetTask(task) : null,
-                            onCheckboxChanged: (_) => _handleCheckboxChanged(task, userTasks),
-                            elapsedDuration: task.isActive ? _elapsedForTask(task) : null,
-                            onStart: task.isNotStarted ? () => _handleStartTask(task) : null,
-                            onFinish: task.isInProgress ? () => _handleFinishTask(task) : null,
+                            onReset: task.completed
+                                ? () => _handleResetTask(task)
+                                : null,
+                            onCheckboxChanged: (_) =>
+                                _handleCheckboxChanged(task, userTasks),
+                            elapsedDuration: task.isActive
+                                ? _elapsedForTask(task)
+                                : null,
+                            onStart: task.isNotStarted
+                                ? () => _handleStartTask(task)
+                                : null,
+                            onFinish: task.isInProgress
+                                ? () => _handleFinishTask(task)
+                                : null,
+                            onAutoCompleteToken:
+                                (!task.completed && !task.isInProgress)
+                                ? () => _handleAutoCompleteToken(
+                                    task,
+                                    userTasks,
+                                    autoCompleteTaskTokens,
+                                  )
+                                : null,
                           ),
                         ),
                       const SizedBox(height: 8),
@@ -590,9 +669,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               subtitle: Text(
                                 _formatTimestamp(entry.timestamp),
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                ),
+                                style: const TextStyle(color: Colors.white70),
                               ),
                             ),
                           ),
