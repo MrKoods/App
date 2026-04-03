@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/firestore_service.dart';
 import '../services/xp_progression_service.dart';
+import '../widgets/xp_title_style.dart';
 
 class ProgressScreen extends StatelessWidget {
   const ProgressScreen({super.key, this.initialUserData});
@@ -77,7 +78,8 @@ class ProgressScreen extends StatelessWidget {
               Expanded(
                 child: Text(
                   rankTitle,
-                  style: const TextStyle(
+                  style: XpTitleStyle.forTitle(
+                    rankTitle,
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,

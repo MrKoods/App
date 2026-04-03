@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/completion_reward_summary.dart';
 import '../services/xp_progression_service.dart';
+import '../widgets/xp_title_style.dart';
 import 'achievements_placeholder_screen.dart';
 
 class ChecklistCompleteScreen extends StatefulWidget {
@@ -226,6 +227,12 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                   label: 'Title unlocked: $title',
                   color: _accentColor,
                   icon: Icons.workspace_premium,
+                  labelStyle: XpTitleStyle.forTitle(
+                    title,
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -277,6 +284,7 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
     required String value,
     required IconData icon,
     required Color color,
+    TextStyle? valueStyle,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -297,11 +305,13 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
           ),
           Text(
             value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
+            style:
+                valueStyle ??
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
           ),
         ],
       ),
@@ -312,6 +322,7 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
     required String label,
     required Color color,
     required IconData icon,
+    TextStyle? labelStyle,
   }) {
     return Container(
       width: double.infinity,
@@ -328,7 +339,9 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style:
+                  labelStyle ??
+                  const TextStyle(color: Colors.white, fontSize: 14),
             ),
           ),
         ],
@@ -454,12 +467,27 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                         children: [
                           const Icon(Icons.auto_graph, color: _accentColor),
                           const SizedBox(width: 8),
-                          Text(
-                            'Level ${xpProgress.level} • ${xpProgress.rankTitle}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: 'Level ${xpProgress.level} • ',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: xpProgress.rankTitle,
+                                  style: XpTitleStyle.forTitle(
+                                    xpProgress.rankTitle,
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           const Spacer(),
@@ -542,6 +570,12 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                     value: xpProgress.rankTitle,
                     icon: Icons.workspace_premium,
                     color: _secondaryAccent,
+                    valueStyle: XpTitleStyle.forTitle(
+                      xpProgress.rankTitle,
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   _buildProgressCard(

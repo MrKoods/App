@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'models/history_entry.dart';
 import 'models/task.dart';
@@ -53,6 +54,9 @@ class MicroWinsApp extends StatelessWidget {
           backgroundColor: backgroundColor,
           foregroundColor: Colors.white,
           elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
         ),
         cardColor: surfaceColor,
         snackBarTheme: const SnackBarThemeData(
@@ -271,7 +275,30 @@ class _MainNavigationState extends State<MainNavigation> {
 
                 return Scaffold(
                   appBar: AppBar(
-                    title: const Text('MicroWins'),
+                    title: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'MICRO',
+                            style: GoogleFonts.audiowide(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.9,
+                              color: const Color(0xFF55E6C1),
+                            ),
+                          ),
+                          TextSpan(
+                            text: 'wins',
+                            style: GoogleFonts.audiowide(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.9,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     actions: [
                       IconButton(
                         icon: const Icon(Icons.query_stats),

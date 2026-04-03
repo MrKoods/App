@@ -524,11 +524,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return Container(
                   color: _backgroundColor,
-                  child: ListView(
-                    controller: _scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                    children: [
+                  child: NotificationListener<OverscrollIndicatorNotification>(
+                    onNotification: (notification) {
+                      notification.disallowIndicator();
+                      return false;
+                    },
+                    child: ListView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                      children: [
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -675,7 +680,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       const SizedBox(height: 24),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
