@@ -11,7 +11,6 @@ class TaskTile extends StatelessWidget {
   final VoidCallback? onReset;
   final VoidCallback? onDelete;
   final VoidCallback? onAutoCompleteToken;
-  final ValueChanged<bool?>? onCheckboxChanged;
   final Duration? elapsedDuration;
   final String? focusModeLabel;
 
@@ -25,7 +24,6 @@ class TaskTile extends StatelessWidget {
     this.onReset,
     this.onDelete,
     this.onAutoCompleteToken,
-    this.onCheckboxChanged,
     this.elapsedDuration,
     this.focusModeLabel,
   });
@@ -103,7 +101,7 @@ class TaskTile extends StatelessWidget {
       value: task.completed,
       activeColor: Colors.amber,
       checkColor: Colors.black,
-      onChanged: task.completed ? null : onCheckboxChanged,
+      onChanged: null,
     );
   }
 
@@ -289,19 +287,6 @@ class TaskTile extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                // Small delete button — only shown when onDelete is provided
-                                if (onDelete != null)
-                                  IconButton(
-                                    onPressed: onDelete,
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.white30,
-                                      size: 20,
-                                    ),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    tooltip: 'Delete task',
-                                  ),
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -354,7 +339,25 @@ class TaskTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      _buildActionArea(),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (onDelete != null)
+                            IconButton(
+                              onPressed: onDelete,
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.white30,
+                                size: 20,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: 'Delete task',
+                            ),
+                          if (onDelete != null) const SizedBox(height: 6),
+                          _buildActionArea(),
+                        ],
+                      ),
                     ],
                   ),
                 ],

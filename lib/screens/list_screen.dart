@@ -163,35 +163,6 @@ class _ListScreenState extends State<ListScreen> {
     await _openCompletionScreenIfNeeded(result.rewardSummary);
   }
 
-  Future<void> _handleCheckboxChanged(Task task, List<Task> tasks) async {
-    if (task.completed) return;
-
-    if (task.isActive) {
-      await _handleFinishTask(task);
-      return;
-    }
-
-    final bool anotherTaskRunning = tasks.any(
-      (t) => t.id != task.id && t.isActive,
-    );
-
-    if (anotherTaskRunning) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Finish your current task first.')),
-      );
-      return;
-    }
-
-    final result = await _firestoreService.completeTaskDirectly(task: task);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${task.taskName} completed. +1 coin')),
-    );
-
-    await _openCompletionScreenIfNeeded(result.rewardSummary);
-  }
-
   Future<void> _handleAutoCompleteToken(
     Task task,
     List<Task> tasks,
@@ -1229,11 +1200,6 @@ class _ListScreenState extends State<ListScreen> {
                                     onReset: task.completed
                                         ? () => _handleResetTask(task)
                                         : null,
-                                    onCheckboxChanged: (_) =>
-                                        _handleCheckboxChanged(
-                                          task,
-                                          widget.tasks,
-                                        ),
                                     elapsedDuration: task.isActive
                                         ? _elapsedForTask(task)
                                         : null,
