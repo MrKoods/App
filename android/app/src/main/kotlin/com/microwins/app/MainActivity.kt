@@ -1,4 +1,4 @@
-package com.example.microwins
+package com.microwins.app
 
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat

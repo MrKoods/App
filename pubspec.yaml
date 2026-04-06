@@ -1,7 +1,10 @@
 name: microwins
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.0+1
+# The value before the + is the version name shown to users.
+# The value after the + is the build number used by app stores.
+# The build number must increase before every Google Play upload.
+version: 1.0.0+2
 
 environment:
   sdk: ^3.11.1
