@@ -116,9 +116,19 @@ class _MainNavigationState extends State<MainNavigation> {
   final FirestoreService _firestoreService = FirestoreService();
   int _selectedIndex = 0;
 
+  void _syncSelectedIndexFromNotifier() {
+    final int? notifierIndex = widget.tabIndexNotifier?.value;
+    if (notifierIndex == null) {
+      return;
+    }
+
+    _selectedIndex = notifierIndex;
+  }
+
   @override
   void initState() {
     super.initState();
+    _syncSelectedIndexFromNotifier();
     widget.tabIndexNotifier?.addListener(_handleExternalTabChange);
     unawaited(_firestoreService.ensureStreakProtectionState());
   }
@@ -131,6 +141,7 @@ class _MainNavigationState extends State<MainNavigation> {
     }
 
     oldWidget.tabIndexNotifier?.removeListener(_handleExternalTabChange);
+    _syncSelectedIndexFromNotifier();
     widget.tabIndexNotifier?.addListener(_handleExternalTabChange);
   }
 

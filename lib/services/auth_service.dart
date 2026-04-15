@@ -88,4 +88,32 @@ class AuthService {
   Future<void> logout() async {
     await _auth.signOut();
   }
+
+  Future<void> deleteUserFirestoreData(String uid) async {
+    final DocumentReference<Map<String, dynamic>> userDocRef =
+        _firestore.collection('users').doc(uid);
+
+    final QuerySnapshot<Map<String, dynamic>> tasksSnapshot =
+        await userDocRef.collection('tasks').get();
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+        in tasksSnapshot.docs) {
+      await doc.reference.delete();
+    }
+
+    final QuerySnapshot<Map<String, dynamic>> historySnapshot =
+        await userDocRef.collection('history').get();
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+        in historySnapshot.docs) {
+      await doc.reference.delete();
+    }
+
+    await userDocRef.delete();
+  }
+
+  Future<void> deleteAccountForUser(User user) async {
+    await deleteUserFirestoreData(user.uid);
+    await user.delete();
+  }
 }

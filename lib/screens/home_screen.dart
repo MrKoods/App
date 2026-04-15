@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import '../models/completion_reward_summary.dart';
 import '../models/history_model.dart';
 import '../models/task_model.dart';
+import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/focus_lock_service.dart';
 import '../widgets/daily_summary_widget.dart';
 import '../widgets/task_tile.dart';
 import 'checklist_complete_screen.dart';
+import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Task>? tasks;
@@ -24,12 +26,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
   final FocusLockService _focusLockService = FocusLockService.instance;
   final ScrollController _scrollController = ScrollController();
   Timer? _timer;
   DateTime _now = DateTime.now();
   bool _isOpeningCompletionScreen = false;
+  bool _isDeletingAccount = false;
 
   static const Color _backgroundColor = Color(0xFF090B10);
   static const Color _surfaceColor = Color(0xFF121826);
@@ -212,6 +216,110 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('${task.taskName} reset')));
+  }
+
+  Future<void> _showDeleteAccountConfirmation() async {
+    if (_isDeletingAccount) {
+      return;
+    }
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete Account'),
+          content: const Text(
+            'Are you sure you want to permanently delete your account? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      if (!mounted) {
+        return;
+      }
+      await deleteAccount(context);
+    }
+  }
+
+  Future<void> deleteAccount(BuildContext context) async {
+    if (_isDeletingAccount) {
+      return;
+    }
+
+    setState(() {
+      _isDeletingAccount = true;
+    });
+
+    try {
+      final User? user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        if (!mounted) {
+          return;
+        }
+
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          const SnackBar(content: Text('No signed-in user found.')),
+        );
+        return;
+      }
+
+      await _authService.deleteAccountForUser(user);
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        const SnackBar(content: Text('Account deleted successfully.')),
+      );
+
+      Navigator.of(this.context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      final String message = e.code == 'requires-recent-login'
+          ? 'For security, please log out and log back in before deleting your account.'
+          : (e.message ?? 'Failed to delete account. Please try again.');
+
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(this.context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to delete account. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeletingAccount = false;
+        });
+      }
+    }
   }
 
   int _taskPriority(Task task) {
@@ -543,6 +651,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                   color: _accentColor,
                                   fontWeight: FontWeight.w600,
                                 ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _isDeletingAccount
+                                    ? null
+                                    : _showDeleteAccountConfirmation,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade700,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: _isDeletingAccount
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text('Delete Account'),
                               ),
                             ),
                           ],
