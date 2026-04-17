@@ -114,6 +114,7 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   final FirestoreService _firestoreService = FirestoreService();
+  final PageController _pageController = PageController();
   int _selectedIndex = 0;
 
   void _syncSelectedIndexFromNotifier() {
@@ -148,6 +149,7 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void dispose() {
     widget.tabIndexNotifier?.removeListener(_handleExternalTabChange);
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -156,6 +158,8 @@ class _MainNavigationState extends State<MainNavigation> {
     if (nextIndex == null || nextIndex == _selectedIndex || !mounted) {
       return;
     }
+
+    _pageController.jumpToPage(nextIndex);
 
     setState(() {
       _selectedIndex = nextIndex;
@@ -201,6 +205,12 @@ class _MainNavigationState extends State<MainNavigation> {
     if (widget.tabIndexNotifier?.value != index) {
       widget.tabIndexNotifier?.value = index;
     }
+
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
 
     setState(() {
       _selectedIndex = index;
@@ -324,7 +334,18 @@ class _MainNavigationState extends State<MainNavigation> {
                       ),
                     ],
                   ),
-                  body: pages[_selectedIndex],
+                  body: PageView(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      if (widget.tabIndexNotifier?.value != index) {
+                        widget.tabIndexNotifier?.value = index;
+                      }
+                      setState(() {
+                        _selectedIndex = index;
+                      });
+                    },
+                    children: pages,
+                  ),
                   floatingActionButton: _selectedIndex < 2
                       ? FloatingActionButton(
                           onPressed: _openAddTaskScreen,
