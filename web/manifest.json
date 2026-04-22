@@ -1,6 +1,6 @@
 {
-    "name": "microwins",
-    "short_name": "microwins",
+    "name": "missionwallet",
+    "short_name": "missionwallet",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

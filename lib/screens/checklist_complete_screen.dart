@@ -388,7 +388,7 @@ class _ChecklistCompleteScreenState extends State<ChecklistCompleteScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Checklist Complete',
+                        'Mission Complete',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 30,

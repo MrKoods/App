@@ -14,6 +14,7 @@ class Task {
   final bool completed;
   final String? focusModeId;
   final int? sortOrder;
+  final String? coinAwardedDate; // Format: 'YYYY-MM-DD' - tracks if coin was already awarded today
 
   Task({
     required this.id,
@@ -32,6 +33,7 @@ class Task {
     bool? isCompleted,
     this.focusModeId,
     this.sortOrder,
+    this.coinAwardedDate,
   })  : userId = userId ?? '',
         taskName = taskName ?? title ?? '',
         category = category ?? 'Personal',
@@ -66,9 +68,11 @@ class Task {
     bool? completed,
     String? focusModeId,
     int? sortOrder,
+    String? coinAwardedDate,
     bool clearStartTime = false,
     bool clearEndTime = false,
     bool clearFocusModeId = false,
+    bool clearCoinAwardedDate = false,
   }) {
     return Task(
       id: id ?? this.id,
@@ -84,6 +88,7 @@ class Task {
       completed: completed ?? this.completed,
       focusModeId: clearFocusModeId ? null : focusModeId ?? this.focusModeId,
       sortOrder: sortOrder ?? this.sortOrder,
+      coinAwardedDate: clearCoinAwardedDate ? null : coinAwardedDate ?? this.coinAwardedDate,
     );
   }
 
@@ -102,6 +107,7 @@ class Task {
       completed: data['completed'] == true,
       focusModeId: _parseFocusModeId(data['focusModeId']),
       sortOrder: _parseNullableInt(data['sortOrder']),
+      coinAwardedDate: data['coinAwardedDate']?.toString(),
     );
   }
 
@@ -119,6 +125,7 @@ class Task {
       'completed': completed,
       'focusModeId': focusModeId,
       'sortOrder': sortOrder,
+      'coinAwardedDate': coinAwardedDate,
     };
   }
 

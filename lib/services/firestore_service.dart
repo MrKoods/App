@@ -247,13 +247,25 @@ class FirestoreService {
       'durationSeconds': safeDurationSeconds,
       'completed': true,
       'date': (latestTask.date ?? endTime).toIso8601String(),
+      'coinAwardedDate': _dateOnly(endTime),
     });
 
-    await userDoc.update({'coins': FieldValue.increment(1)});
+    // Only award +1 coin if this task hasn't already awarded a coin today
+    final String? previousCoinAwardedDate = latestTask.coinAwardedDate;
+    final bool alreadyAwardedCoinToday = previousCoinAwardedDate != null &&
+        previousCoinAwardedDate == _dateOnly(endTime);
 
-    await addHistory(
-      '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
-    );
+    if (!alreadyAwardedCoinToday) {
+      await userDoc.update({'coins': FieldValue.increment(1)});
+
+      await addHistory(
+        '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)}',
+      );
+    } else {
+      await addHistory(
+        '${latestTask.taskName} completed in ${_formatMinutes(safeDurationSeconds)} (coin already awarded today)',
+      );
+    }
 
     // Post task completion to activity feed
     await ActivityService().postActivity(
@@ -284,11 +296,20 @@ class FirestoreService {
       'durationSeconds': 0,
       'completed': true,
       'date': now.toIso8601String(),
+      'coinAwardedDate': _dateOnly(now),
     });
 
-    await userDoc.update({'coins': FieldValue.increment(1)});
+    // Only award +1 coin if this task hasn't already awarded a coin today
+    final bool alreadyAwardedCoinToday = task.coinAwardedDate != null &&
+        task.coinAwardedDate == _dateOnly(now);
 
-    await addHistory('${task.taskName} completed in 0 minutes');
+    if (!alreadyAwardedCoinToday) {
+      await userDoc.update({'coins': FieldValue.increment(1)});
+      await addHistory('${task.taskName} completed in 0 minutes');
+    } else {
+      await addHistory('${task.taskName} completed in 0 minutes (coin already awarded today)');
+    }
+
     final CompletionRewardSummary? rewardSummary = await _updateDailyProgress(
       referenceDate: now,
     );
@@ -312,9 +333,20 @@ class FirestoreService {
       'durationSeconds': focusedSeconds < 0 ? 0 : focusedSeconds,
       'completed': true,
       'date': now.toIso8601String(),
+      'coinAwardedDate': _dateOnly(now),
     });
 
-    await addHistory('${task.taskName} completed with a focus session');
+    // Only award +1 coin if this task hasn't already awarded a coin today
+    final bool alreadyAwardedCoinToday = task.coinAwardedDate != null &&
+        task.coinAwardedDate == _dateOnly(now);
+
+    if (!alreadyAwardedCoinToday) {
+      await userDoc.update({'coins': FieldValue.increment(1)});
+      await addHistory('${task.taskName} completed with a focus session');
+    } else {
+      await addHistory('${task.taskName} completed with a focus session (coin already awarded today)');
+    }
+    
     return _updateDailyProgress(referenceDate: now);
   }
 
@@ -328,6 +360,7 @@ class FirestoreService {
       'durationSeconds': 0,
       'completed': false,
       'date': now.toIso8601String(),
+      'coinAwardedDate': null, // Clear so user can earn coin again when re-completed
     });
 
     await addHistory('${task.taskName} reset');
@@ -654,10 +687,14 @@ class FirestoreService {
         throw StateError('already_completed');
       }
 
+      // Only award +1 coin if this task hasn't already awarded a coin today
+      final bool alreadyAwardedCoinToday = latestTask.coinAwardedDate != null &&
+          latestTask.coinAwardedDate == _dateOnly(now);
+
       final int currentCoins = _readInt(userData['coins']);
       transaction.update(userDoc, {
         'autoCompleteTaskTokens': availableTokens - 1,
-        'coins': currentCoins + 1,
+        if (!alreadyAwardedCoinToday) 'coins': currentCoins + 1,
       });
 
       transaction.update(tasksCollection.doc(task.id), {
@@ -667,12 +704,14 @@ class FirestoreService {
         'durationSeconds': latestTask.durationSeconds,
         'completed': true,
         'date': now.toIso8601String(),
+        'coinAwardedDate': _dateOnly(now),
       });
 
       transaction.set(historyCollection.doc(), {
         'userId': uid,
-        'message':
-            '${latestTask.taskName} auto-completed using token (+1 coin)',
+        'message': alreadyAwardedCoinToday
+            ? '${latestTask.taskName} auto-completed using token (coin already awarded today)'
+            : '${latestTask.taskName} auto-completed using token (+1 coin)',
         'timestamp': FieldValue.serverTimestamp(),
       });
 
@@ -1133,6 +1172,12 @@ class FirestoreService {
     return localLeft.year == localRight.year &&
         localLeft.month == localRight.month &&
         localLeft.day == localRight.day;
+  }
+
+  /// Returns date as 'YYYY-MM-DD' string for comparison
+  String _dateOnly(DateTime dateTime) {
+    final DateTime local = dateTime.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
   }
 
   DateTime? _readDateTime(dynamic value) {

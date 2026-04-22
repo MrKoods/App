@@ -1124,7 +1124,7 @@ class _ListScreenState extends State<ListScreen> {
                     child: Row(
                       children: [
                         const Text(
-                          'My Checklist',
+                          "Today's Mission",
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 28,

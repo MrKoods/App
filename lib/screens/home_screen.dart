@@ -620,7 +620,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Home',
+                              'Complete your mission',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 30,
@@ -697,7 +697,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             dailySummary['currentStreak'] ?? currentStreak,
                       ),
                       const SizedBox(height: 24),
-                      _buildSectionTitle('Tasks'),
+                      _buildSectionTitle("Today's Mission"),
                       const SizedBox(height: 10),
                       if (sortedTasks.isEmpty)
                         _buildEmptyCard('No tasks found for this user.')

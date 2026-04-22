@@ -41,7 +41,7 @@ class MicroWinsApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'MicroWins',
+      title: 'MissionWallet',
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: backgroundColor,
         colorScheme: const ColorScheme.dark(
@@ -300,7 +300,7 @@ class _MainNavigationState extends State<MainNavigation> {
                       TextSpan(
                         children: [
                           TextSpan(
-                            text: 'MICRO',
+                            text: 'MISSION',
                             style: GoogleFonts.audiowide(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,
@@ -309,7 +309,7 @@ class _MainNavigationState extends State<MainNavigation> {
                             ),
                           ),
                           TextSpan(
-                            text: 'wins',
+                            text: 'Wallet',
                             style: GoogleFonts.audiowide(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,
