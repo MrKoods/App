@@ -4,7 +4,7 @@ publish_to: 'none'
 # The value before the + is the version name shown to users.
 # The value after the + is the build number used by app stores.
 # The build number must increase before every Google Play upload.
-version: 1.2.0+4
+version: 1.2.1+5
 
 environment:
   sdk: ^3.11.1
